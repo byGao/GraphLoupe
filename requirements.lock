@@ -1,0 +1,9 @@
+# GraphLoupe sidecar — locked dependency versions
+# Captured by the pin-dump-foundation phase, 2026-06-16, python 3.14.3.
+# See pin_dump.golden.txt for the framework-behavior pins these versions back.
+# node / VS Code engine / @types/vscode versions are locked later (PHASE 1, Extension).
+
+langgraph==1.1.9
+langchain-core==1.3.0
+langgraph-checkpoint==4.0.2
+langgraph-checkpoint-sqlite==3.0.3
