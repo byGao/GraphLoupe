@@ -11,10 +11,10 @@ Depends on: pydantic v2.
 """
 from __future__ import annotations
 
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Final, Literal, Union
 from pydantic import BaseModel, Field, TypeAdapter
 
-PROTOCOL_VERSION = "0.1.0"
+PROTOCOL_VERSION: Final = "0.1.0"
 
 CheckpointId = str
 ThreadId = str
@@ -298,5 +298,5 @@ ClientCommand = Annotated[
 
 
 # Runtime parse helpers (Python-only; the TS mirror uses zod discriminated unions).
-ServerEventAdapter = TypeAdapter(ServerEvent)
-ClientCommandAdapter = TypeAdapter(ClientCommand)
+ServerEventAdapter: TypeAdapter[ServerEvent] = TypeAdapter(ServerEvent)
+ClientCommandAdapter: TypeAdapter[ClientCommand] = TypeAdapter(ClientCommand)

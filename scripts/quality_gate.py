@@ -24,19 +24,18 @@ import sys
 APP_DIR = pathlib.Path(__file__).resolve().parent.parent
 
 
+def _py(*args: str) -> None:
+    subprocess.run([sys.executable, *args], cwd=APP_DIR, check=True)
+
+
 def _run_l0() -> None:
-    """L0: flake8 (style gate) then the PIN tests (test-plan.html L0). Raises on failure."""
-    flake8_targets = ["graphloupe_sidecar", "protocol.py", "pin_dump.py", "scripts", "tests"]
-    subprocess.run(
-        [sys.executable, "-m", "flake8", *flake8_targets],
-        cwd=APP_DIR,
-        check=True,
-    )
-    subprocess.run(
-        [sys.executable, "-m", "pytest", "tests/", "-q"],
-        cwd=APP_DIR,
-        check=True,
-    )
+    """L0: lint (flake8) + types (mypy) + security (bandit) + PIN tests (pytest)."""
+    lint_targets = ["graphloupe_sidecar", "protocol.py", "pin_dump.py", "scripts", "tests"]
+    ship_targets = ["graphloupe_sidecar", "protocol.py", "pin_dump.py"]
+    _py("-m", "flake8", *lint_targets)
+    _py("-m", "mypy", *ship_targets, "--ignore-missing-imports")
+    _py("-m", "bandit", "-rq", *ship_targets)
+    _py("-m", "pytest", "tests/", "-q")
 
 
 def _run_l1() -> None:

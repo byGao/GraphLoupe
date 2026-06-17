@@ -60,6 +60,11 @@ def build_graph(step_delay: float = 0.0):
     return g.compile(checkpointer=MemorySaver())
 
 
+def demo_graph():
+    """Default graph entry for the sidecar: the demo with a visible step delay."""
+    return build_graph(step_delay=0.5)
+
+
 def build_interrupt_graph(spy: Callable[[], None]):
     """Single node that runs a side effect (spy) BEFORE interrupt().
 
