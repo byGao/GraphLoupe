@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useState } from "react";
-import { ReactFlow, Background, Controls, type Node, type Edge } from "@xyflow/react";
+import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import { initialState, reduce, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
@@ -63,6 +63,8 @@ export default function App() {
       id,
       position: pos[id],
       data: { label: id },
+      sourcePosition: Position.Right,
+      targetPosition: Position.Left,
       style:
         id === state.active
           ? { border: "2px solid #3fb950", background: "#10301a", color: "#56d364" }
