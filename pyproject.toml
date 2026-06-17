@@ -1,0 +1,11 @@
+[tool.pytest.ini_options]
+# Warnings are errors by default, so OUR code's deprecations fail loudly and are
+# never silently shipped. Known third-party warnings we cannot fix are allow-listed
+# explicitly below (with a reason + a removal trigger), never blanket-ignored.
+filterwarnings = [
+    "error",
+    # Upstream: langchain_core 1.3.0 calls asyncio.iscoroutinefunction(), deprecated in
+    # CPython 3.13 and slated for removal in 3.16 (langchain_core/callbacks/manager.py).
+    # Not our code. Remove this line once a locked langchain_core stops using it.
+    "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning",
+]
