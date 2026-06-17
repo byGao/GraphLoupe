@@ -20,6 +20,8 @@ CheckpointId = str
 ThreadId = str
 RunId = str
 InterruptId = str   # PIN: parallel interrupt id collision (langgraph #6626) -> dedup by node+seq
+                    # PIN-cal DEFER 2026-06-17: parallel-interrupt behavior on langgraph 1.1.9 not yet
+                    # exercised (no vscode.lm offline); dedup layer lands PHASE 2. See pin_dump.golden.txt.
 NodeName = str
 
 BoundaryWhen = Literal["before", "after"]
@@ -42,14 +44,16 @@ class TokenCount(BaseModel):
 
 # ---- State (R1/R2) ---------------------------------------------------------
 class StateDiffEntry(BaseModel):
-    channel: str            # PIN
+    channel: str            # PIN-cal confirmed 2026-06-17: get_state().values is keyed by
+                            # channel name (golden: 'messages', 'steps').
     before: Any | None = None
     after: Any | None = None
     op: Literal["add", "update", "remove"]
 
 
 class StateSnapshot(BaseModel):
-    values: dict[str, Any]  # PIN: shape of get_state().values
+    values: dict[str, Any]  # PIN-cal confirmed 2026-06-17: get_state().values is a
+                            # dict[str, Any] keyed by channel (pin_dump.golden.txt).
     diff: list[StateDiffEntry] | None = None
 
 
@@ -58,7 +62,9 @@ class ChatMessage(BaseModel):
     role: Literal["system", "human", "ai", "tool"]
     content: str
     name: str | None = None
-    toolCallId: str | None = None   # PIN: BaseMessage reconstruction field
+    toolCallId: str | None = None   # PIN-cal PENDING 2026-06-17: needs a tool-calling model;
+                                    # offline fake model emits no tool calls. Confirm on PHASE 2
+                                    # (manual tool_call path / vscode.lm).
 
 
 class JsonSchema(BaseModel):
@@ -109,7 +115,8 @@ class LlmStart(Envelope):
     runId: RunId
     node: NodeName
     llmEventId: str
-    model: str | None = None        # PIN: on_chat_model_start metadata
+    model: str | None = None        # PIN-cal confirmed 2026-06-17: on_chat_model_start.metadata
+                                    # carries ls_model_type / ls_provider (pin_dump.golden.txt).
     promptTokens: TokenCount | None = None
 
 

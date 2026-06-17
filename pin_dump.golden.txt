@@ -1,0 +1,23 @@
+== versions ==
+langgraph 1.1.9
+langchain-core 1.3.0
+langgraph-checkpoint 4.0.2
+langgraph-checkpoint-sqlite 3.0.3
+== get_graph nodes (PIN: R1 render contract) ==
+NODES: ['__end__', '__start__', 'llm', 'prepare']
+== get_graph edges ==
+EDGES: [('__start__', 'prepare'), ('llm', '__end__'), ('prepare', 'llm')]
+== astream_events v2 shapes (PIN: P4 event protocol, LlmStart.model) ==
+on_chain_start: event_keys=['data', 'event', 'metadata', 'name', 'parent_ids', 'run_id', 'tags']
+on_chain_start: data_keys=['input']
+on_chain_start: metadata_keys=['ls_integration', 'thread_id']
+on_chat_model_start: event_keys=['data', 'event', 'metadata', 'name', 'parent_ids', 'run_id', 'tags']
+on_chat_model_start: data_keys=['input']
+on_chat_model_start: metadata_keys=['checkpoint_ns', 'langgraph_checkpoint_ns', 'langgraph_node', 'langgraph_path', 'langgraph_step', 'langgraph_triggers', 'ls_integration', 'ls_model_type', 'ls_provider', 'thread_id']
+== get_state().values (PIN: StateSnapshot.values, StateDiffEntry.channel) ==
+VALUE_CHANNELS: ['messages', 'steps']
+VALUE_TYPES: {'messages': 'list', 'steps': 'int'}
+== checkpointer + fork API (PIN: SqliteSaver path, update_state/get_state_history) ==
+SqliteSaver: langgraph.checkpoint.sqlite.SqliteSaver
+graph.update_state: True
+graph.get_state_history: True

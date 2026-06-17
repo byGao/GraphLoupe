@@ -11,17 +11,31 @@ workflow/stages/graphloupe/test-plan.html:
     L2  BDD scenarios
     L3  langgraph dev integration consistency
 
-STATUS: scaffold. Every level is PENDING until the pin-dump foundation phase
-lands pin_dump.golden.txt and protocol.ts. A PENDING level exits non-zero so
-phase-done halts (a gate must never report a false green).
+STATUS: L0 is live (pin-dump-foundation). L1-L3 stay PENDING until protocol.ts
+and the BDD/integration layers land; a PENDING level exits non-zero so phase-done
+halts (a gate must never report a false green).
 """
 from __future__ import annotations
 
+import pathlib
+import subprocess
 import sys
+
+APP_DIR = pathlib.Path(__file__).resolve().parent.parent
+
+
+def _run_l0() -> None:
+    """L0: the PIN tests (test-plan.html L0). Raises on failure."""
+    subprocess.run(
+        [sys.executable, "-m", "pytest", "tests/", "-q"],
+        cwd=APP_DIR,
+        check=True,
+    )
+
 
 # Each level: (id, description, runner). runner=None means PENDING.
 LEVELS: list[tuple[str, str, object]] = [
-    ("L0", "PINs (P1-P9) + PIN dump vs pin_dump.golden.txt", None),
+    ("L0", "PINs (offline subset) + PIN dump vs pin_dump.golden.txt", _run_l0),
     ("L1", "contract round-trip TS<->Py on shared golden JSON", None),
     ("L2", "BDD scenarios", None),
     ("L3", "langgraph dev integration consistency", None),
@@ -42,7 +56,7 @@ def main() -> int:
     if pending:
         print(
             f"\nquality_gate: {len(pending)} level(s) PENDING "
-            f"({', '.join(pending)}) — calibrate after the pin-dump foundation phase.",
+            f"({', '.join(pending)}) - calibrate in a later phase.",
             file=sys.stderr,
         )
         return 2
