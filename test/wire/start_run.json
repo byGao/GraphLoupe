@@ -1,0 +1,11 @@
+{
+  "v": "0.1.0",
+  "corr": null,
+  "type": "start_run",
+  "threadId": "t1",
+  "input": {
+    "messages": [],
+    "steps": 0
+  },
+  "providerMode": "manual"
+}

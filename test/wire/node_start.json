@@ -1,0 +1,10 @@
+{
+  "v": "0.1.0",
+  "corr": null,
+  "type": "node_start",
+  "threadId": "t1",
+  "runId": "r1",
+  "node": "llm",
+  "checkpointId": "c1",
+  "ts": 0.0
+}

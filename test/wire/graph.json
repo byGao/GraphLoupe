@@ -1,0 +1,26 @@
+{
+  "v": "0.1.0",
+  "corr": null,
+  "type": "graph",
+  "threadId": "t1",
+  "nodes": [
+    "__start__",
+    "prepare",
+    "llm",
+    "__end__"
+  ],
+  "edges": [
+    [
+      "__start__",
+      "prepare"
+    ],
+    [
+      "prepare",
+      "llm"
+    ],
+    [
+      "llm",
+      "__end__"
+    ]
+  ]
+}

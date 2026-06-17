@@ -39,10 +39,15 @@ def _run_l0() -> None:
     )
 
 
+def _run_l1() -> None:
+    """L1: TS contract round-trip (vitest). The Python half runs under L0's pytest."""
+    subprocess.run("npm run test", cwd=APP_DIR, shell=True, check=True)
+
+
 # Each level: (id, description, runner). runner=None means PENDING.
 LEVELS: list[tuple[str, str, object]] = [
     ("L0", "PINs (offline subset) + PIN dump vs pin_dump.golden.txt", _run_l0),
-    ("L1", "contract round-trip TS<->Py on shared golden JSON", None),
+    ("L1", "contract round-trip TS<->Py on shared golden JSON", _run_l1),
     ("L2", "BDD scenarios", None),
     ("L3", "langgraph dev integration consistency", None),
 ]

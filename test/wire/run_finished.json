@@ -1,0 +1,9 @@
+{
+  "v": "0.1.0",
+  "corr": null,
+  "type": "run_finished",
+  "threadId": "t1",
+  "runId": "r1",
+  "status": "completed",
+  "checkpointId": "c1"
+}
