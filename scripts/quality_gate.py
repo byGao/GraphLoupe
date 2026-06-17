@@ -25,7 +25,13 @@ APP_DIR = pathlib.Path(__file__).resolve().parent.parent
 
 
 def _run_l0() -> None:
-    """L0: the PIN tests (test-plan.html L0). Raises on failure."""
+    """L0: flake8 (style gate) then the PIN tests (test-plan.html L0). Raises on failure."""
+    flake8_targets = ["graphloupe_sidecar", "protocol.py", "pin_dump.py", "scripts", "tests"]
+    subprocess.run(
+        [sys.executable, "-m", "flake8", *flake8_targets],
+        cwd=APP_DIR,
+        check=True,
+    )
     subprocess.run(
         [sys.executable, "-m", "pytest", "tests/", "-q"],
         cwd=APP_DIR,

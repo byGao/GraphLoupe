@@ -12,16 +12,17 @@ Depends on: pydantic v2.
 from __future__ import annotations
 
 from typing import Annotated, Any, Literal, Union
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, TypeAdapter
 
 PROTOCOL_VERSION = "0.1.0"
 
 CheckpointId = str
 ThreadId = str
 RunId = str
-InterruptId = str   # PIN: parallel interrupt id collision (langgraph #6626) -> dedup by node+seq
-                    # PIN-cal DEFER 2026-06-17: parallel-interrupt behavior on langgraph 1.1.9 not yet
-                    # exercised (no vscode.lm offline); dedup layer lands PHASE 2. See pin_dump.golden.txt.
+# PIN: parallel interrupt id collision (langgraph #6626) -> dedup by node+seq.
+# PIN-cal DEFER 2026-06-17: parallel-interrupt behavior on langgraph 1.1.9 not yet
+# exercised (no vscode.lm offline); dedup layer lands PHASE 2. See pin_dump.golden.txt.
+InterruptId = str
 NodeName = str
 
 BoundaryWhen = Literal["before", "after"]
@@ -44,16 +45,18 @@ class TokenCount(BaseModel):
 
 # ---- State (R1/R2) ---------------------------------------------------------
 class StateDiffEntry(BaseModel):
-    channel: str            # PIN-cal confirmed 2026-06-17: get_state().values is keyed by
-                            # channel name (golden: 'messages', 'steps').
+    # PIN-cal confirmed 2026-06-17: get_state().values is keyed by channel name
+    # (golden: 'messages', 'steps').
+    channel: str
     before: Any | None = None
     after: Any | None = None
     op: Literal["add", "update", "remove"]
 
 
 class StateSnapshot(BaseModel):
-    values: dict[str, Any]  # PIN-cal confirmed 2026-06-17: get_state().values is a
-                            # dict[str, Any] keyed by channel (pin_dump.golden.txt).
+    # PIN-cal confirmed 2026-06-17: get_state().values is a dict[str, Any] keyed by
+    # channel (pin_dump.golden.txt).
+    values: dict[str, Any]
     diff: list[StateDiffEntry] | None = None
 
 
@@ -62,9 +65,9 @@ class ChatMessage(BaseModel):
     role: Literal["system", "human", "ai", "tool"]
     content: str
     name: str | None = None
-    toolCallId: str | None = None   # PIN-cal PENDING 2026-06-17: needs a tool-calling model;
-                                    # offline fake model emits no tool calls. Confirm on PHASE 2
-                                    # (manual tool_call path / vscode.lm).
+    # PIN-cal PENDING 2026-06-17: needs a tool-calling model; offline fake model emits no
+    # tool calls. Confirm on PHASE 2 (manual tool_call path / vscode.lm).
+    toolCallId: str | None = None
 
 
 class JsonSchema(BaseModel):
@@ -83,6 +86,14 @@ ErrorCode = Literal[
 # ============================================================================
 # ServerEvent — sidecar -> extension
 # ============================================================================
+class GraphTopology(Envelope):
+    # R1 execution view: get_graph() nodes/edges for the canvas. Added PHASE 1.
+    type: Literal["graph"] = "graph"
+    threadId: ThreadId | None = None
+    nodes: list[NodeName]
+    edges: list[tuple[NodeName, NodeName]]
+
+
 class RunStarted(Envelope):
     type: Literal["run_started"] = "run_started"
     threadId: ThreadId
@@ -115,8 +126,9 @@ class LlmStart(Envelope):
     runId: RunId
     node: NodeName
     llmEventId: str
-    model: str | None = None        # PIN-cal confirmed 2026-06-17: on_chat_model_start.metadata
-                                    # carries ls_model_type / ls_provider (pin_dump.golden.txt).
+    # PIN-cal confirmed 2026-06-17: on_chat_model_start.metadata carries
+    # ls_model_type / ls_provider (pin_dump.golden.txt).
+    model: str | None = None
     promptTokens: TokenCount | None = None
 
 
@@ -200,7 +212,7 @@ class ErrorEvent(Envelope):
 
 ServerEvent = Annotated[
     Union[
-        RunStarted, NodeStart, NodeEnd, LlmStart, LlmToken, LlmEnd,
+        GraphTopology, RunStarted, NodeStart, NodeEnd, LlmStart, LlmToken, LlmEnd,
         ToolStart, ToolEnd, ManualInferenceRequired, BreakpointHit,
         StateSnapshotEvent, RunFinished, ErrorEvent,
     ],
@@ -283,3 +295,8 @@ ClientCommand = Annotated[
     ],
     Field(discriminator="type"),
 ]
+
+
+# Runtime parse helpers (Python-only; the TS mirror uses zod discriminated unions).
+ServerEventAdapter = TypeAdapter(ServerEvent)
+ClientCommandAdapter = TypeAdapter(ClientCommand)
