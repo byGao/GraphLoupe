@@ -6,6 +6,7 @@ and use a fake chat model so everything runs offline (no Copilot / vscode.lm).
 """
 from __future__ import annotations
 
+import asyncio
 from typing import Annotated, Any, Callable, TypedDict
 
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
@@ -27,19 +28,26 @@ def _fake_model() -> FakeMessagesListChatModel:
     return FakeMessagesListChatModel(responses=[AIMessage(content="pong")])
 
 
-def build_graph():
+def build_graph(step_delay: float = 0.0):
     """Canonical entrypoint: prepare -> llm, compiled with an in-memory checkpointer.
 
     Under astream_events(version="v2") this emits on_chain_start and
     on_chat_model_start; get_state().values exposes the 'messages' and 'steps'
     channels. Used by pin_dump.py and PIN-04/07.
+
+    step_delay: a small per-node sleep so the canvas highlight is perceptible when
+    running the instant fake model in the UI. Tests / pin_dump use 0 (default).
     """
     model = _fake_model()
 
-    def prepare(state: State) -> dict[str, Any]:
+    async def prepare(state: State) -> dict[str, Any]:
+        if step_delay:
+            await asyncio.sleep(step_delay)
         return {"steps": state.get("steps", 0) + 1}
 
     async def llm(state: State) -> dict[str, Any]:
+        if step_delay:
+            await asyncio.sleep(step_delay)
         reply = await model.ainvoke(state["messages"])
         return {"messages": [reply]}
 

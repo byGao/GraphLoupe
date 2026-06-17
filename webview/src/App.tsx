@@ -7,6 +7,39 @@ import type { ServerEvent } from "../../protocol";
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = acquireVsCodeApi();
 
+/** Layered left-to-right layout by BFS depth from __start__ (so start -> ... -> end, no crossings). */
+function layout(nodes: string[], edges: [string, string][]): Record<string, { x: number; y: number }> {
+  const adj: Record<string, string[]> = {};
+  nodes.forEach((n) => (adj[n] = []));
+  edges.forEach(([s, t]) => adj[s]?.push(t));
+  const depth: Record<string, number> = {};
+  const start = nodes.includes("__start__") ? "__start__" : nodes[0];
+  const queue: string[] = start ? [start] : [];
+  if (start) depth[start] = 0;
+  while (queue.length) {
+    const n = queue.shift() as string;
+    for (const m of adj[n] ?? []) {
+      if (depth[m] === undefined) {
+        depth[m] = depth[n] + 1;
+        queue.push(m);
+      }
+    }
+  }
+  let maxDepth = Math.max(0, ...Object.values(depth));
+  nodes.forEach((n) => {
+    if (depth[n] === undefined) depth[n] = ++maxDepth;
+  });
+  const perDepth: Record<number, number> = {};
+  const pos: Record<string, { x: number; y: number }> = {};
+  nodes.forEach((n) => {
+    const d = depth[n];
+    const row = perDepth[d] ?? 0;
+    perDepth[d] = row + 1;
+    pos[n] = { x: d * 210, y: 70 + row * 110 };
+  });
+  return pos;
+}
+
 const startRun = {
   v: "0.1.0", corr: null, type: "start_run",
   threadId: null, input: { messages: [], steps: 0 }, providerMode: "manual",
@@ -24,19 +57,18 @@ export default function App() {
     return () => window.removeEventListener("message", onMsg);
   }, []);
 
-  const nodes: Node[] = useMemo(
-    () =>
-      state.nodes.map((id, i) => ({
-        id,
-        position: { x: i * 180, y: 80 },
-        data: { label: id },
-        style:
-          id === state.active
-            ? { border: "2px solid #3fb950", background: "#10301a", color: "#56d364" }
-            : undefined,
-      })),
-    [state.nodes, state.active],
-  );
+  const nodes: Node[] = useMemo(() => {
+    const pos = layout(state.nodes, state.edges);
+    return state.nodes.map((id) => ({
+      id,
+      position: pos[id],
+      data: { label: id },
+      style:
+        id === state.active
+          ? { border: "2px solid #3fb950", background: "#10301a", color: "#56d364" }
+          : undefined,
+    }));
+  }, [state.nodes, state.edges, state.active]);
 
   const edges: Edge[] = useMemo(
     () => state.edges.map(([s, t], i) => ({ id: `e${i}`, source: s, target: t })),

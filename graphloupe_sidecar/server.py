@@ -19,7 +19,8 @@ import protocol as P
 from graphloupe_sidecar.graph import build_graph
 
 app = FastAPI()
-_graph = build_graph()
+# step_delay makes the canvas highlight perceptible for the instant fake-model demo.
+_graph = build_graph(step_delay=0.5)
 _NODES = set(_graph.get_graph().nodes) - {"__start__", "__end__"}
 
 
