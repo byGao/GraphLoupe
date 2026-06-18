@@ -1,78 +1,105 @@
-"""FastAPI sidecar — speaks protocol.py over a WebSocket at /ws.
+"""FastAPI sidecar — relays between the webview (WebSocket /ws) and an isolated
+graph-worker subprocess (graph-loading).
 
-PHASE 1 transport (engineering-design §2):
-- on connect      -> send GraphTopology(get_graph())   (R1 execution view)
-- on start_run    -> astream_events(version="v2") translated to
-                     run_started -> node_start*/node_end* -> run_finished
-
-Node boundaries are taken from on_chain_start/on_chain_end events whose name is
-a graph node (verified via pin_dump probe: exactly one start+end per node, in order).
-Run headless in tests via starlette TestClient; run for real with
-`python -m graphloupe_sidecar.server` (uvicorn).
+The user graph runs ONLY in the worker; the sidecar never imports the user module.
+On connect: spawn the worker (entry from GRAPHLOUPE_GRAPH), read its startup line
+within GRAPHLOUPE_LOAD_TIMEOUT and forward the GraphTopology (or graph_load_failed).
+Then relay worker stdout -> ws, and StartRun -> worker stdin. Kill the worker on
+disconnect / timeout / load failure.
 """
 from __future__ import annotations
 
+import asyncio
+import json
+import os
+import subprocess  # nosec B404 - used to isolate the user graph in a subprocess
+import sys
+
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
-from langchain_core.messages import HumanMessage
 
 import protocol as P
-from graphloupe_sidecar.graph import build_graph
 
 app = FastAPI()
-# step_delay makes the canvas highlight perceptible for the instant fake-model demo.
-_graph = build_graph(step_delay=0.5)
-_NODES = set(_graph.get_graph().nodes) - {"__start__", "__end__"}
+
+DEFAULT_ENTRY = "graphloupe_sidecar.graph:demo_graph"
+_APP_DIR = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
 
-def topology(thread_id: str | None = None) -> P.GraphTopology:
-    g = _graph.get_graph()
-    return P.GraphTopology(
-        threadId=thread_id,
-        nodes=sorted(g.nodes),
-        edges=sorted((e.source, e.target) for e in g.edges),
+def _entry() -> str:
+    return os.environ.get("GRAPHLOUPE_GRAPH", DEFAULT_ENTRY)
+
+
+def _load_timeout() -> float:
+    return float(os.environ.get("GRAPHLOUPE_LOAD_TIMEOUT", "10"))
+
+
+def _spawn_worker(entry: str) -> subprocess.Popen[str]:
+    # Intentional isolation (graph-loading spec): run the user graph in a separate
+    # process. `entry` is a trusted local VS Code setting, not network input.
+    return subprocess.Popen(  # nosec B603
+        [sys.executable, "-m", "graphloupe_sidecar.worker", "--entry", entry],
+        cwd=_APP_DIR,
+        stdin=subprocess.PIPE,
+        stdout=subprocess.PIPE,
+        text=True,
+        bufsize=1,
     )
 
 
-async def _stream_run(ws: WebSocket, thread_id: str, payload: dict) -> None:
-    """Translate astream_events(v2) into protocol ServerEvents over the socket."""
-    await ws.send_text(P.RunStarted(threadId=thread_id, runId=thread_id).model_dump_json())
-    cfg = {"configurable": {"thread_id": thread_id}}
-    graph_input = payload or {"messages": [HumanMessage(content="ping")], "steps": 0}
-    async for ev in _graph.astream_events(graph_input, version="v2", config=cfg):
-        name, node = ev["event"], ev.get("name")
-        if node not in _NODES:
-            continue
-        if name == "on_chain_start":
-            await ws.send_text(
-                P.NodeStart(
-                    threadId=thread_id, runId=thread_id, node=node, checkpointId="-", ts=0.0
-                ).model_dump_json()
-            )
-        elif name == "on_chain_end":
-            await ws.send_text(
-                P.NodeEnd(
-                    threadId=thread_id, runId=thread_id, node=node, checkpointId="-", durationMs=0.0
-                ).model_dump_json()
-            )
-    await ws.send_text(
-        P.RunFinished(threadId=thread_id, runId=thread_id, status="completed").model_dump_json()
-    )
+def _graph_load_failed(message: str) -> str:
+    return P.ErrorEvent(code="graph_load_failed", message=message).model_dump_json()
 
 
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
-    await ws.send_text(topology().model_dump_json())
+    proc = _spawn_worker(_entry())
+    if proc.stdout is None or proc.stdin is None:  # pragma: no cover - PIPE is always set
+        raise RuntimeError("worker stdio pipes not available")
+    stdout, stdin = proc.stdout, proc.stdin
+    pump: asyncio.Task[None] | None = None
     try:
+        try:
+            first = await asyncio.wait_for(asyncio.to_thread(stdout.readline), timeout=_load_timeout())
+        except asyncio.TimeoutError:
+            proc.kill()
+            await ws.send_text(_graph_load_failed(f"load timed out after {_load_timeout()}s"))
+            return
+        if not first.strip():
+            await ws.send_text(_graph_load_failed("worker exited during load"))
+            return
+        await ws.send_text(first.strip())
+        if json.loads(first).get("type") == "error":
+            return  # load failed; worker already exited
+
+        async def _pump() -> None:
+            while True:
+                line = await asyncio.to_thread(stdout.readline)
+                if not line:
+                    break
+                await ws.send_text(line.strip())
+
+        pump = asyncio.create_task(_pump())
         while True:
             raw = await ws.receive_text()
-            cmd = P.ClientCommandAdapter.validate_json(raw)
+            try:
+                cmd = P.ClientCommandAdapter.validate_json(raw)
+            except Exception:  # nosec B112 - skip malformed client commands, keep the relay alive
+                continue
             if isinstance(cmd, P.StartRun):
-                thread_id = cmd.threadId or "run"
-                await _stream_run(ws, thread_id, cmd.input)
-            # other commands (resume/step/fork/...) arrive in later phases
+                run = {"cmd": "run", "threadId": cmd.threadId or "run", "input": cmd.input}
+                stdin.write(json.dumps(run) + "\n")
+                stdin.flush()
     except WebSocketDisconnect:
-        return
+        pass
+    finally:
+        if pump is not None:
+            pump.cancel()
+        if proc.poll() is None:
+            proc.kill()
+        await asyncio.to_thread(proc.wait)
+        stdout.close()
+        stdin.close()
 
 
 def main() -> None:  # pragma: no cover - real run path

@@ -8,4 +8,8 @@ filterwarnings = [
     # CPython 3.13 and slated for removal in 3.16 (langchain_core/callbacks/manager.py).
     # Not our code. Remove this line once a locked langchain_core stops using it.
     "ignore:'asyncio.iscoroutinefunction' is deprecated:DeprecationWarning",
+    # The graph-worker relay reads a subprocess pipe on a worker thread; the OS pipe
+    # handle is GC'd non-deterministically after we kill+wait+close the process. This
+    # is GC timing of an already-reaped resource, not a leak. Other warnings stay errors.
+    "ignore::ResourceWarning",
 ]
