@@ -10,14 +10,17 @@ export interface CanvasState {
   edges: [string, string][];
   active: string | null;
   running: boolean;
+  error: string | null;
 }
 
-export const initialState: CanvasState = { nodes: [], edges: [], active: null, running: false };
+export const initialState: CanvasState = {
+  nodes: [], edges: [], active: null, running: false, error: null,
+};
 
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
     case "graph":
-      return { ...state, nodes: ev.nodes, edges: ev.edges };
+      return { ...state, nodes: ev.nodes, edges: ev.edges, error: null };
     case "run_started":
       return { ...state, running: true, active: null };
     case "node_start":
@@ -26,6 +29,9 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
       return { ...state, active: state.active === ev.node ? null : state.active };
     case "run_finished":
       return { ...state, running: false, active: null };
+    case "error":
+      // graph_load_failed (and other sidecar errors) -> surface, don't blank-canvas.
+      return { ...state, error: `${ev.code}: ${ev.message}`, running: false };
     default:
       return state;
   }

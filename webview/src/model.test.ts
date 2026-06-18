@@ -13,7 +13,7 @@ describe("canvas reducer", () => {
   });
 
   it("node_start highlights, node_end clears", () => {
-    let s: CanvasState = { nodes: ["llm"], edges: [], active: null, running: true };
+    let s: CanvasState = { nodes: ["llm"], edges: [], active: null, running: true, error: null };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
     s = reduce(s, ev({ type: "node_end", node: "llm" }));
@@ -26,5 +26,11 @@ describe("canvas reducer", () => {
     s = reduce({ ...s, active: "llm" }, ev({ type: "run_finished" }));
     expect(s.running).toBe(false);
     expect(s.active).toBeNull();
+  });
+
+  it("error (graph_load_failed) sets error and stops running", () => {
+    const s = reduce({ ...initialState, running: true }, ev({ type: "error", code: "graph_load_failed", message: "no module" }));
+    expect(s.error).toBe("graph_load_failed: no module");
+    expect(s.running).toBe(false);
   });
 });

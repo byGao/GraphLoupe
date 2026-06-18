@@ -59,9 +59,12 @@ export function activate(context: vscode.ExtensionContext): void {
   context.subscriptions.push(
     vscode.commands.registerCommand("graphloupe.open", async () => {
       const port = await freePort();
+      const entry = vscode.workspace.getConfiguration("graphloupe").get<string>("graphEntry") || "";
+      const env = { ...process.env };
+      if (entry) env.GRAPHLOUPE_GRAPH = entry; // your graph loads in the isolated worker
       sidecar = spawn("python", ["-m", "graphloupe_sidecar.server", "--port", String(port)], {
         cwd: context.extensionPath,
-        env: process.env,
+        env,
       });
       sidecar.stderr?.on("data", (d) => console.error("[sidecar]", d.toString()));
 

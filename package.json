@@ -10,7 +10,17 @@
   "contributes": {
     "commands": [
       { "command": "graphloupe.open", "title": "GraphLoupe: Open Graph Panel" }
-    ]
+    ],
+    "configuration": {
+      "title": "GraphLoupe",
+      "properties": {
+        "graphloupe.graphEntry": {
+          "type": "string",
+          "default": "",
+          "description": "Your graph entry as 'package.module:callable' (returns a compiled LangGraph). Empty = built-in demo graph. Loaded in an isolated worker subprocess."
+        }
+      }
+    }
   },
   "scripts": {
     "build": "node esbuild.mjs",

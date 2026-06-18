@@ -87,6 +87,11 @@ export default function App() {
           execution view (read-only){state.running ? " · running" : ""}
         </span>
       </div>
+      {state.error && (
+        <div style={{ padding: "8px 12px", background: "#3d1518", borderBottom: "1px solid #6b2020", color: "#ff7b72", fontSize: 13 }}>
+          ⚠ graph load failed — {state.error}
+        </div>
+      )}
       <div style={{ flex: 1 }}>
         <ReactFlow nodes={nodes} edges={edges} fitView>
           <Background />
