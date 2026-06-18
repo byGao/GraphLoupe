@@ -9,7 +9,8 @@
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
-      { "command": "graphloupe.open", "title": "GraphLoupe: Open Graph Panel" }
+      { "command": "graphloupe.open", "title": "GraphLoupe: Open Graph Panel" },
+      { "command": "graphloupe.reload", "title": "GraphLoupe: Reload Graph" }
     ],
     "configuration": {
       "title": "GraphLoupe",
@@ -17,7 +18,12 @@
         "graphloupe.graphEntry": {
           "type": "string",
           "default": "",
-          "description": "Your graph entry as 'package.module:callable' (returns a compiled LangGraph). Empty = built-in demo graph. Loaded in an isolated worker subprocess."
+          "description": "Your graph entry as 'package.module:callable' (returns a compiled LangGraph), resolved against graphloupe.projectRoot. Empty = built-in demo graph. Loaded in an isolated worker subprocess."
+        },
+        "graphloupe.projectRoot": {
+          "type": "string",
+          "default": "",
+          "description": "Folder put on the worker's sys.path so graphEntry resolves against your project. Empty = the first workspace folder."
         }
       }
     }

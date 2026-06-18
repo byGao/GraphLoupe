@@ -23,6 +23,13 @@ import sys
 import protocol as P
 
 
+def _add_project_root(root: str) -> None:
+    """Put the user's project on sys.path so `entry` resolves against THEIR repo,
+    not the sidecar's own folder (workspace-load)."""
+    if root and root not in sys.path:
+        sys.path.insert(0, root)
+
+
 def _load(entry: str):
     module_name, _, attr = entry.partition(":")
     builder = getattr(importlib.import_module(module_name), attr or "build_graph")
@@ -53,7 +60,9 @@ async def _run(graph, nodes: set[str], thread_id: str, payload: dict) -> None:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--entry", default="graphloupe_sidecar.graph:demo_graph")
+    parser.add_argument("--project-root", default="")
     args = parser.parse_args()
+    _add_project_root(args.project_root)
 
     try:
         graph = _load(args.entry)

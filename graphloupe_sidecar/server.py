@@ -29,15 +29,22 @@ def _entry() -> str:
     return os.environ.get("GRAPHLOUPE_GRAPH", DEFAULT_ENTRY)
 
 
+def _project_root() -> str:
+    return os.environ.get("GRAPHLOUPE_PROJECT_ROOT", "")
+
+
 def _load_timeout() -> float:
     return float(os.environ.get("GRAPHLOUPE_LOAD_TIMEOUT", "10"))
 
 
-def _spawn_worker(entry: str) -> subprocess.Popen[str]:
+def _spawn_worker(entry: str, project_root: str) -> subprocess.Popen[str]:
     # Intentional isolation (graph-loading spec): run the user graph in a separate
-    # process. `entry` is a trusted local VS Code setting, not network input.
+    # process. `entry`/`project_root` are trusted local VS Code settings, not network input.
+    cmd = [sys.executable, "-m", "graphloupe_sidecar.worker", "--entry", entry]
+    if project_root:
+        cmd += ["--project-root", project_root]
     return subprocess.Popen(  # nosec B603
-        [sys.executable, "-m", "graphloupe_sidecar.worker", "--entry", entry],
+        cmd,
         cwd=_APP_DIR,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
@@ -53,7 +60,7 @@ def _graph_load_failed(message: str) -> str:
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
-    proc = _spawn_worker(_entry())
+    proc = _spawn_worker(_entry(), _project_root())
     if proc.stdout is None or proc.stdin is None:  # pragma: no cover - PIPE is always set
         raise RuntimeError("worker stdio pipes not available")
     stdout, stdin = proc.stdout, proc.stdin
