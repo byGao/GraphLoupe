@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { initialState, reduce, type CanvasState } from "./model";
+import { initialState, needsGraphSelection, reduce, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
@@ -92,11 +92,33 @@ export default function App() {
           ⚠ graph load failed — {state.error}
         </div>
       )}
-      <div style={{ flex: 1 }}>
+      <div style={{ flex: 1, position: "relative" }}>
         <ReactFlow nodes={nodes} edges={edges} fitView>
           <Background />
           <Controls />
         </ReactFlow>
+        {needsGraphSelection(state) && (
+          <div
+            style={{
+              position: "absolute", inset: 0, display: "flex", flexDirection: "column",
+              alignItems: "center", justifyContent: "center", gap: 12,
+              background: "rgba(13,17,23,0.85)", textAlign: "center",
+            }}
+          >
+            <div style={{ color: "#8b949e" }}>
+              {state.error ? "Couldn't load that graph." : "No graph selected."}
+            </div>
+            <button
+              style={{ padding: "8px 16px", fontSize: 14, cursor: "pointer" }}
+              onClick={() => vscode.postMessage({ type: "ui:selectGraph" })}
+            >
+              Select Graph…
+            </button>
+            <div style={{ color: "#6e7681", fontSize: 12, maxWidth: 380 }}>
+              Picks a <code>build_graph()</code> in your project — no settings to edit.
+            </div>
+          </div>
+        )}
       </div>
     </div>
   );

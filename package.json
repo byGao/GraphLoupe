@@ -10,7 +10,8 @@
   "contributes": {
     "commands": [
       { "command": "graphloupe.open", "title": "GraphLoupe: Open Graph Panel" },
-      { "command": "graphloupe.reload", "title": "GraphLoupe: Reload Graph" }
+      { "command": "graphloupe.reload", "title": "GraphLoupe: Reload Graph" },
+      { "command": "graphloupe.selectGraph", "title": "GraphLoupe: Select Graph" }
     ],
     "configuration": {
       "title": "GraphLoupe",

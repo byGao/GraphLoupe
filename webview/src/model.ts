@@ -17,6 +17,11 @@ export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null,
 };
 
+/** Show the "Select Graph" call-to-action when nothing is loaded or a load failed. */
+export function needsGraphSelection(state: CanvasState): boolean {
+  return state.error !== null || (state.nodes.length === 0 && !state.running);
+}
+
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
     case "graph":

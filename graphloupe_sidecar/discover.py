@@ -1,0 +1,63 @@
+"""Discover graph entry points under a project root WITHOUT executing user code.
+
+AST-parses *.py for a top-level `build_graph` function and prints JSON entries
+[{entry, file, line}] for the Select-Graph picker. No imports = safe to scan an
+untrusted repo (a module that raises on import won't crash discovery).
+
+Usage: python -m graphloupe_sidecar.discover --project-root <dir>
+"""
+from __future__ import annotations
+
+import argparse
+import ast
+import json
+import os
+from pathlib import Path
+
+TARGET = "build_graph"
+SKIP_DIRS = {".git", "__pycache__", ".venv", "venv", "node_modules", ".mypy_cache", ".pytest_cache"}
+
+
+def _module_path(file: Path, root: Path) -> str:
+    rel = file.relative_to(root)
+    parts = list(rel.parts)
+    if parts[-1] == "__init__.py":
+        parts = parts[:-1]
+    else:
+        parts[-1] = parts[-1][:-3]  # strip ".py"
+    return ".".join(parts)
+
+
+def discover(root: str) -> list[dict[str, object]]:
+    root_path = Path(root)
+    found: list[dict[str, object]] = []
+    for dirpath, dirnames, filenames in os.walk(root_path):
+        dirnames[:] = [d for d in dirnames if d not in SKIP_DIRS and not d.startswith(".")]
+        for name in filenames:
+            if not name.endswith(".py"):
+                continue
+            file = Path(dirpath) / name
+            try:
+                tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
+            except (SyntaxError, UnicodeDecodeError, OSError):
+                continue  # unparseable file -> skip, never raise
+            for node in tree.body:  # top-level defs only
+                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == TARGET:
+                    found.append({
+                        "entry": f"{_module_path(file, root_path)}:{TARGET}",
+                        "file": str(file),
+                        "line": node.lineno,
+                    })
+    found.sort(key=lambda e: str(e["entry"]))
+    return found
+
+
+def main() -> None:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--project-root", required=True)
+    args = parser.parse_args()
+    print(json.dumps(discover(args.project_root)))
+
+
+if __name__ == "__main__":
+    main()

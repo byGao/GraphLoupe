@@ -1,6 +1,6 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { initialState, reduce, type CanvasState } from "./model";
+import { initialState, needsGraphSelection, reduce, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
@@ -32,5 +32,13 @@ describe("canvas reducer", () => {
     const s = reduce({ ...initialState, running: true }, ev({ type: "error", code: "graph_load_failed", message: "no module" }));
     expect(s.error).toBe("graph_load_failed: no module");
     expect(s.running).toBe(false);
+  });
+
+  it("needsGraphSelection: true when empty or error, false once a graph loads", () => {
+    expect(needsGraphSelection(initialState)).toBe(true);
+    const loaded = reduce(initialState, ev({ type: "graph", nodes: ["a"], edges: [] }));
+    expect(needsGraphSelection(loaded)).toBe(false);
+    const failed = reduce(loaded, ev({ type: "error", code: "graph_load_failed", message: "x" }));
+    expect(needsGraphSelection(failed)).toBe(true);
   });
 });

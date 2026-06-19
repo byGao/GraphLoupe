@@ -13,9 +13,38 @@ import { AddressInfo, createServer } from "node:net";
 import WebSocket from "ws";
 import { parseServerEvent } from "../../protocol";
 
+interface GraphEntry { entry: string; file: string; line: number }
+
 let sidecar: ChildProcess | undefined;
 let socket: WebSocket | undefined;
 let panel: vscode.WebviewPanel | undefined;
+
+function resolveProjectRoot(): string {
+  const cfg = vscode.workspace.getConfiguration("graphloupe");
+  return cfg.get<string>("projectRoot") || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+}
+
+/** AST-scan the project for build_graph entries (no user code is executed). */
+function discoverGraphs(context: vscode.ExtensionContext, projectRoot: string): Promise<GraphEntry[]> {
+  return new Promise((resolve) => {
+    if (!projectRoot) return resolve([]);
+    const proc = spawn(
+      "python",
+      ["-m", "graphloupe_sidecar.discover", "--project-root", projectRoot],
+      { cwd: context.extensionPath, env: process.env },
+    );
+    let out = "";
+    proc.stdout?.on("data", (d) => (out += d.toString()));
+    proc.on("error", () => resolve([]));
+    proc.on("close", () => {
+      try {
+        resolve(JSON.parse(out) as GraphEntry[]);
+      } catch {
+        resolve([]);
+      }
+    });
+  });
+}
 
 function freePort(): Promise<number> {
   return new Promise((resolve, reject) => {
@@ -74,8 +103,7 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
 
   const cfg = vscode.workspace.getConfiguration("graphloupe");
   const entry = cfg.get<string>("graphEntry") || "";
-  const projectRoot =
-    cfg.get<string>("projectRoot") || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
+  const projectRoot = resolveProjectRoot();
 
   const env = { ...process.env };
   if (entry) env.GRAPHLOUPE_GRAPH = entry;
@@ -106,8 +134,15 @@ export function activate(context: vscode.ExtensionContext): void {
           enableScripts: true,
           retainContextWhenHidden: true,
         });
-        // register once; forwards to whichever socket the current session holds
-        panel.webview.onDidReceiveMessage((cmd) => socket?.send(JSON.stringify(cmd)));
+        // register once; webview UI actions are intercepted, everything else is a
+        // ClientCommand forwarded to the current session's socket.
+        panel.webview.onDidReceiveMessage((msg) => {
+          if (msg && msg.type === "ui:selectGraph") {
+            vscode.commands.executeCommand("graphloupe.selectGraph");
+            return;
+          }
+          socket?.send(JSON.stringify(msg));
+        });
         panel.onDidDispose(() => {
           killSidecar();
           panel = undefined;
@@ -121,6 +156,33 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       await startSession(context);
+    }),
+    vscode.commands.registerCommand("graphloupe.selectGraph", async () => {
+      const projectRoot = resolveProjectRoot();
+      if (!projectRoot) {
+        vscode.window.showWarningMessage("GraphLoupe: open a folder first (no workspace).");
+        return;
+      }
+      const entries = await discoverGraphs(context, projectRoot);
+      if (entries.length === 0) {
+        vscode.window.showWarningMessage(
+          "GraphLoupe: no build_graph() found. Name your entry build_graph, or set graphloupe.graphEntry manually.",
+        );
+        return;
+      }
+      const picked = await vscode.window.showQuickPick(
+        entries.map((e) => ({ label: e.entry, detail: e.file })),
+        { placeHolder: "Select a graph (a build_graph function in your project)" },
+      );
+      if (!picked) return;
+      await vscode.workspace
+        .getConfiguration("graphloupe")
+        .update("graphEntry", picked.label, vscode.ConfigurationTarget.Workspace);
+      if (!panel) {
+        await vscode.commands.executeCommand("graphloupe.open");
+      } else {
+        await startSession(context);
+      }
     }),
   );
 }
