@@ -97,6 +97,10 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 run = {"cmd": "run", "threadId": cmd.threadId or "run", "input": cmd.input}
                 stdin.write(json.dumps(run) + "\n")
                 stdin.flush()
+            elif isinstance(cmd, P.Resume):
+                resume = {"cmd": "resume", "payload": cmd.payload.model_dump()}
+                stdin.write(json.dumps(resume) + "\n")
+                stdin.flush()
     except WebSocketDisconnect:
         pass
     finally:

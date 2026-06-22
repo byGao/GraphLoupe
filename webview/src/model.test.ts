@@ -13,7 +13,7 @@ describe("canvas reducer", () => {
   });
 
   it("node_start highlights, node_end clears", () => {
-    let s: CanvasState = { nodes: ["llm"], edges: [], active: null, running: true, error: null };
+    let s: CanvasState = { nodes: ["llm"], edges: [], active: null, running: true, error: null, pending: null };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
     s = reduce(s, ev({ type: "node_end", node: "llm" }));
@@ -32,6 +32,19 @@ describe("canvas reducer", () => {
     const s = reduce({ ...initialState, running: true }, ev({ type: "error", code: "graph_load_failed", message: "no module" }));
     expect(s.error).toBe("graph_load_failed: no module");
     expect(s.running).toBe(false);
+  });
+
+  it("manual_inference_required sets pending; node_start/run_finished clear it", () => {
+    const req = ev({
+      type: "manual_inference_required", node: "ask", threadId: "run", interruptId: "i1",
+      renderedText: "ask?", expects: "text", promptTokens: { prompt: 5, completion: null, source: "sidecar_estimate" },
+      toolSchema: null, messages: [],
+    });
+    let s = reduce(initialState, req);
+    expect(s.pending?.interruptId).toBe("i1");
+    expect(s.pending?.expects).toBe("text");
+    s = reduce(s, ev({ type: "node_start", node: "ask" }));  // resume re-run clears it
+    expect(s.pending).toBeNull();
   });
 
   it("needsGraphSelection: true when empty or error, false once a graph loads", () => {

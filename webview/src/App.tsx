@@ -1,11 +1,62 @@
 import { useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { initialState, needsGraphSelection, reduce, type CanvasState } from "./model";
+import { initialState, needsGraphSelection, reduce, type CanvasState, type ManualRequest } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = acquireVsCodeApi();
+
+/** Post a Resume ClientCommand (text or tool_call) back through the extension/sidecar. */
+function sendResume(p: ManualRequest, draft: string): void {
+  let payload: unknown;
+  if (p.expects === "text") {
+    payload = { kind: "text", text: draft };
+  } else {
+    let args: unknown = {};
+    try {
+      args = JSON.parse(draft || "{}");
+    } catch {
+      args = {};
+    }
+    payload = { kind: "tool_call", name: "tool", args };
+  }
+  vscode.postMessage({
+    v: "0.1.0", corr: null, type: "resume",
+    threadId: p.threadId, interruptId: p.interruptId, payload,
+  });
+}
+
+function ManualPanel({ pending }: { pending: ManualRequest }) {
+  const [draft, setDraft] = useState("");
+  useEffect(() => setDraft(""), [pending.interruptId]);
+  const isText = pending.expects === "text";
+  return (
+    <div style={{ borderTop: "1px solid #30363d", background: "#11161d", padding: "10px 14px", maxHeight: "45%", overflow: "auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <strong style={{ color: "#d29922" }}>Manual inference</strong>
+        <span style={{ color: "#6e7681", fontSize: 12 }}>
+          node: {pending.node} · prompt ~{pending.promptTokens} tok (sidecar est) · expects: {pending.expects}
+        </span>
+        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => navigator.clipboard?.writeText(pending.renderedText)}>
+          Copy prompt
+        </button>
+      </div>
+      <pre style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 12, whiteSpace: "pre-wrap", maxHeight: 120, overflow: "auto" }}>
+        {pending.renderedText}
+      </pre>
+      <textarea
+        value={draft}
+        onChange={(e) => setDraft(e.target.value)}
+        placeholder={isText ? "Paste the model's response…" : 'Paste tool args as JSON, e.g. {"query": "…"}'}
+        style={{ width: "100%", minHeight: 56, background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: 8, fontFamily: "monospace", fontSize: 12 }}
+      />
+      <button style={{ marginTop: 6, padding: "6px 14px", fontSize: 13 }} onClick={() => sendResume(pending, draft)}>
+        Send resume
+      </button>
+    </div>
+  );
+}
 
 /** Layered left-to-right layout by BFS depth from __start__ (so start -> ... -> end, no crossings). */
 function layout(nodes: string[], edges: [string, string][]): Record<string, { x: number; y: number }> {
@@ -97,7 +148,7 @@ export default function App() {
           <Background />
           <Controls />
         </ReactFlow>
-        {needsGraphSelection(state) && (
+        {needsGraphSelection(state) && !state.pending && (
           <div
             style={{
               position: "absolute", inset: 0, display: "flex", flexDirection: "column",
@@ -120,6 +171,7 @@ export default function App() {
           </div>
         )}
       </div>
+      {state.pending && <ManualPanel pending={state.pending} />}
     </div>
   );
 }

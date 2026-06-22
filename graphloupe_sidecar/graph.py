@@ -12,6 +12,7 @@ from typing import Annotated, Any, Callable, TypedDict
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
 from langchain_core.messages import AIMessage, BaseMessage
 from langgraph.checkpoint.memory import MemorySaver
+from langgraph.func import task
 from langgraph.graph import END, START, StateGraph
 from langgraph.graph.message import add_messages
 from langgraph.types import interrupt
@@ -63,6 +64,64 @@ def build_graph(step_delay: float = 0.0):
 def demo_graph():
     """Default graph entry for the sidecar: the demo with a visible step delay."""
     return build_graph(step_delay=0.5)
+
+
+def _estimate_tokens(messages: list[BaseMessage]) -> int:
+    """Cheap sidecar-side prompt estimate (no provider tokenizer on the manual path, P8)."""
+    chars = sum(len(str(getattr(m, "content", ""))) for m in messages)
+    return max(1, chars // 4)
+
+
+def manual_infer(messages: list[BaseMessage], expects: str = "text",
+                 tool_schema: dict[str, Any] | None = None) -> Any:
+    """The manual-inference 'model': pause via interrupt() with a contract-shaped
+    payload (manual_inference_required fields), return the resumed value.
+
+    Wrapping interrupt() like this is the ManualChatModel — swap it for a vscode.lm
+    call and the same node becomes the Copilot auto path (deferred / backlog).
+    """
+    rendered = "\n".join(f"{getattr(m, 'type', 'human')}: {m.content}" for m in messages)
+    payload = {
+        "renderedText": rendered,
+        "messages": [{"role": "human", "content": rendered, "name": None, "toolCallId": None}],
+        "expects": expects,
+        "toolSchema": tool_schema,
+        "promptTokens": {"prompt": _estimate_tokens(messages), "completion": None,
+                         "source": "sidecar_estimate"},
+    }
+    return interrupt(payload)
+
+
+def build_manual_graph(spy: Callable[[], None] | None = None, step_delay: float = 0.0):
+    """prepare -> ask(manual inference) -> END. The 'ask' node runs an optional spy
+    BEFORE interrupt(), wrapped in @task so the side effect is idempotent across the
+    resume re-run (P1: node re-runs; P2/@task: effect replays once). The node then
+    pauses for a human-pasted answer."""
+    @task
+    def _side_effect() -> None:
+        if spy:
+            spy()
+
+    def prepare(state: State) -> dict[str, Any]:
+        return {"steps": state.get("steps", 0) + 1}
+
+    def ask(state: State) -> dict[str, Any]:
+        _side_effect().result()  # idempotent pre-interrupt effect (engineering §10 ledger)
+        answer = manual_infer(state["messages"] or [AIMessage(content="(no input)")])
+        return {"messages": [AIMessage(content=str(answer))]}
+
+    g = StateGraph(State)
+    g.add_node("prepare", prepare)
+    g.add_node("ask", ask)
+    g.add_edge(START, "prepare")
+    g.add_edge("prepare", "ask")
+    g.add_edge("ask", END)
+    return g.compile(checkpointer=MemorySaver())
+
+
+def manual_demo():
+    """Default-discoverable manual graph for the picker / F5 demo."""
+    return build_manual_graph()
 
 
 def build_interrupt_graph(spy: Callable[[], None]):

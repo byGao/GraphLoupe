@@ -5,16 +5,27 @@
  */
 import type { ServerEvent } from "../../protocol";
 
+export interface ManualRequest {
+  node: string;
+  threadId: string | null;
+  interruptId: string;
+  renderedText: string;
+  expects: "text" | "tool_call";
+  promptTokens: number;
+  toolSchema: unknown | null;
+}
+
 export interface CanvasState {
   nodes: string[];
   edges: [string, string][];
   active: string | null;
   running: boolean;
   error: string | null;
+  pending: ManualRequest | null;  // manual inference awaiting a pasted answer
 }
 
 export const initialState: CanvasState = {
-  nodes: [], edges: [], active: null, running: false, error: null,
+  nodes: [], edges: [], active: null, running: false, error: null, pending: null,
 };
 
 /** Show the "Select Graph" call-to-action when nothing is loaded or a load failed. */
@@ -29,11 +40,21 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
     case "run_started":
       return { ...state, running: true, active: null };
     case "node_start":
-      return { ...state, active: ev.node };
+      // a node (re)starting clears any prior pending manual request (resume re-run, P1)
+      return { ...state, active: ev.node, pending: null };
     case "node_end":
       return { ...state, active: state.active === ev.node ? null : state.active };
+    case "manual_inference_required":
+      return {
+        ...state,
+        pending: {
+          node: ev.node, threadId: ev.threadId ?? null, interruptId: ev.interruptId,
+          renderedText: ev.renderedText, expects: ev.expects,
+          promptTokens: ev.promptTokens.prompt, toolSchema: ev.toolSchema ?? null,
+        },
+      };
     case "run_finished":
-      return { ...state, running: false, active: null };
+      return { ...state, running: false, active: null, pending: null };
     case "error":
       // graph_load_failed (and other sidecar errors) -> surface, don't blank-canvas.
       return { ...state, error: `${ev.code}: ${ev.message}`, running: false };

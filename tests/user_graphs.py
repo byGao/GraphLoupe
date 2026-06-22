@@ -55,3 +55,26 @@ def slow():
 def raises():
     """Fails during build (graph_load_failed test)."""
     raise RuntimeError("boom during build")
+
+
+def manual_tool():
+    """Manual-inference node expecting a structured tool_call (toolSchema requires 'query')."""
+    from langchain_core.messages import AIMessage
+
+    from graphloupe_sidecar.graph import manual_infer
+
+    schema = {
+        "type": "object",
+        "properties": {"query": {"type": "string"}, "top_k": {"type": "integer"}},
+        "required": ["query"],
+    }
+
+    def ask(state: _State) -> dict[str, Any]:
+        result = manual_infer([AIMessage(content="search?")], expects="tool_call", tool_schema=schema)
+        return {"messages": [AIMessage(content=str(result))]}
+
+    g = StateGraph(_State)
+    g.add_node("ask", ask)
+    g.add_edge(START, "ask")
+    g.add_edge("ask", END)
+    return g.compile(checkpointer=MemorySaver())
