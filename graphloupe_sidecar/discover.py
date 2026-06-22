@@ -14,8 +14,10 @@ import json
 import os
 from pathlib import Path
 
-TARGET = "build_graph"
 SKIP_DIRS = {".git", "__pycache__", ".venv", "venv", "node_modules", ".mypy_cache", ".pytest_cache"}
+# Common graph-factory names; also detected: any fn that calls .compile() in a file
+# that imports langgraph (catches build_app, make_graph, etc. — not just build_graph).
+KNOWN_FACTORY_NAMES = {"build_graph", "build_app", "make_graph", "create_graph"}
 
 
 def _module_path(file: Path, root: Path) -> str:
@@ -26,6 +28,25 @@ def _module_path(file: Path, root: Path) -> str:
     else:
         parts[-1] = parts[-1][:-3]  # strip ".py"
     return ".".join(parts)
+
+
+def _imports_langgraph(tree: ast.Module) -> bool:
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            if any(a.name.split(".")[0] == "langgraph" for a in node.names):
+                return True
+        elif isinstance(node, ast.ImportFrom):
+            if (node.module or "").split(".")[0] == "langgraph":
+                return True
+    return False
+
+
+def _calls_compile(func: ast.AST) -> bool:
+    for node in ast.walk(func):
+        if isinstance(node, ast.Call) and isinstance(node.func, ast.Attribute):
+            if node.func.attr == "compile":  # g.compile() -> a compiled graph factory
+                return True
+    return False
 
 
 def discover(root: str) -> list[dict[str, object]]:
@@ -41,10 +62,13 @@ def discover(root: str) -> list[dict[str, object]]:
                 tree = ast.parse(file.read_text(encoding="utf-8"), filename=str(file))
             except (SyntaxError, UnicodeDecodeError, OSError):
                 continue  # unparseable file -> skip, never raise
+            has_langgraph = _imports_langgraph(tree)
             for node in tree.body:  # top-level defs only
-                if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == TARGET:
+                if not isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+                    continue
+                if node.name in KNOWN_FACTORY_NAMES or (has_langgraph and _calls_compile(node)):
                     found.append({
-                        "entry": f"{_module_path(file, root_path)}:{TARGET}",
+                        "entry": f"{_module_path(file, root_path)}:{node.name}",
                         "file": str(file),
                         "line": node.lineno,
                     })

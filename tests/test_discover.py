@@ -32,3 +32,17 @@ def test_ac02_ast_does_not_execute_and_skips_envs(tmp_path: Path) -> None:
     assert "real:build_graph" in entries
     assert "boom:build_graph" in entries          # listed via AST despite the raise
     assert not any("vendor" in e or "cached" in e for e in entries)  # skipped dirs
+
+
+def test_ac01b_detects_compile_factory_by_heuristic_not_just_name(tmp_path: Path) -> None:
+    # A langgraph file whose factory is NOT named build_graph (e.g. WikiGraph's build_app,
+    # or any name) is found via "imports langgraph + calls .compile()".
+    _write(tmp_path / "flow.py",
+           "from langgraph.graph import StateGraph\n"
+           "def assemble():\n    g = StateGraph(dict)\n    return g.compile()\n")
+    # A .compile() that is NOT langgraph (re.compile) in a non-langgraph file is ignored.
+    _write(tmp_path / "noise.py", "import re\ndef make_pattern():\n    return re.compile('x')\n")
+
+    entries = {e["entry"] for e in discover(str(tmp_path))}
+    assert "flow:assemble" in entries
+    assert not any("make_pattern" in e for e in entries)
