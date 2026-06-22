@@ -69,6 +69,19 @@ def runtime_error():
     return g.compile(checkpointer=MemorySaver())
 
 
+def no_checkpointer():
+    """A graph compiled WITHOUT a checkpointer (like WikiGraph's build_app); the worker
+    must run it to completion, not crash probing get_state ('No checkpointer set')."""
+    def step(state: _State) -> dict[str, Any]:
+        return {"steps": state.get("steps", 0) + 1}
+
+    g = StateGraph(_State)
+    g.add_node("step", step)
+    g.add_edge(START, "step")
+    g.add_edge("step", END)
+    return g.compile()  # no checkpointer on purpose
+
+
 def manual_tool():
     """Manual-inference node expecting a structured tool_call (toolSchema requires 'query')."""
     from langchain_core.messages import AIMessage

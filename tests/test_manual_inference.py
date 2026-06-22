@@ -112,6 +112,14 @@ def test_worker_surfaces_runtime_error_and_survives() -> None:
         assert _read_until(proc, "error").code == "internal"
 
 
+def test_worker_runs_checkpointerless_graph_to_completion() -> None:
+    # A graph compiled without a checkpointer (e.g. WikiGraph's build_app) can't pause;
+    # the worker must finish it, not crash on get_state ("No checkpointer set").
+    with _worker("tests.user_graphs:no_checkpointer") as proc:
+        _send(proc, {"cmd": "run", "input": {}})
+        assert _read_until(proc, "run_finished").status == "completed"
+
+
 def test_worker_resume_kind_mismatch() -> None:
     with _worker("tests.user_graphs:manual_tool") as proc:
         _send(proc, {"cmd": "run", "input": {"messages": [], "steps": 0}})

@@ -112,10 +112,13 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
                cmd_q: "asyncio.Queue[str | None]") -> None:
     _emit(P.RunStarted(threadId=thread_id, runId=thread_id).model_dump_json())
     cfg = {"configurable": {"thread_id": thread_id}}
+    # interrupt/pause/time-travel need a checkpointer; a graph compiled without one
+    # (e.g. plain g.compile()) simply can't pause, so don't probe get_state on it.
+    has_checkpointer = getattr(graph, "checkpointer", None) is not None
     source: Any = run_input
     while True:
         await _stream(graph, nodes, source, thread_id)
-        pending = _pending_interrupt(graph, cfg)
+        pending = _pending_interrupt(graph, cfg) if has_checkpointer else None
         if pending is None:
             _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="completed").model_dump_json())
             return
