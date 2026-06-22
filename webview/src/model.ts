@@ -28,9 +28,11 @@ export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
 };
 
-/** Show the "Select Graph" call-to-action when nothing is loaded or a load failed. */
+/** Show the "Select Graph" CTA only when no graph is loaded (covers graph_load_failed,
+ *  which leaves nodes empty). A run-time error with a graph already on screen keeps the
+ *  graph + shows the error banner instead. */
 export function needsGraphSelection(state: CanvasState): boolean {
-  return state.error !== null || (state.nodes.length === 0 && !state.running);
+  return state.nodes.length === 0 && !state.running;
 }
 
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {

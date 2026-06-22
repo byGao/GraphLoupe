@@ -47,11 +47,16 @@ describe("canvas reducer", () => {
     expect(s.pending).toBeNull();
   });
 
-  it("needsGraphSelection: true when empty or error, false once a graph loads", () => {
+  it("needsGraphSelection: true with no graph, false once a graph loads", () => {
     expect(needsGraphSelection(initialState)).toBe(true);
     const loaded = reduce(initialState, ev({ type: "graph", nodes: ["a"], edges: [] }));
     expect(needsGraphSelection(loaded)).toBe(false);
-    const failed = reduce(loaded, ev({ type: "error", code: "graph_load_failed", message: "x" }));
-    expect(needsGraphSelection(failed)).toBe(true);
+    // graph_load_failed arrives with no graph (empty nodes) -> CTA shows
+    const loadFailed = reduce(initialState, ev({ type: "error", code: "graph_load_failed", message: "x" }));
+    expect(needsGraphSelection(loadFailed)).toBe(true);
+    // a run-time error while a graph is on screen -> keep graph, no CTA (banner only)
+    const runErr = reduce(loaded, ev({ type: "error", code: "internal", message: "boom" }));
+    expect(needsGraphSelection(runErr)).toBe(false);
+    expect(runErr.error).toBe("internal: boom");
   });
 });

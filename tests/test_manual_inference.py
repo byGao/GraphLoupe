@@ -101,6 +101,17 @@ def test_worker_tool_call_missing_required_then_recovers() -> None:
         assert _read_until(proc, "run_finished").status == "completed"
 
 
+def test_worker_surfaces_runtime_error_and_survives() -> None:
+    # A user-graph node that raises (e.g. needs input it didn't get) must surface as an
+    # error event, not silently kill the worker (was: stuck on the node forever).
+    with _worker("tests.user_graphs:runtime_error") as proc:
+        _send(proc, {"cmd": "run", "input": {}})
+        err = _read_until(proc, "error")
+        assert err.code == "internal" and "repo_path" in err.message
+        _send(proc, {"cmd": "run", "input": {}})  # still alive -> errors again, no hang
+        assert _read_until(proc, "error").code == "internal"
+
+
 def test_worker_resume_kind_mismatch() -> None:
     with _worker("tests.user_graphs:manual_tool") as proc:
         _send(proc, {"cmd": "run", "input": {"messages": [], "steps": 0}})

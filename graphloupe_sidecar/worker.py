@@ -155,8 +155,14 @@ async def _amain(graph: Any, nodes: set[str]) -> None:
             return
         cmd = json.loads(raw)
         if cmd.get("cmd") == "run":
-            await _run(graph, nodes, cmd.get("threadId") or "run",
-                       cmd.get("input") or {"messages": [], "steps": 0}, cmd_q)
+            try:
+                await _run(graph, nodes, cmd.get("threadId") or "run",
+                           cmd.get("input") or {"messages": [], "steps": 0}, cmd_q)
+            except Exception as exc:  # a user-graph node raised: surface it, stay alive
+                _emit(P.ErrorEvent(
+                    code="internal",
+                    message=f"run failed: {type(exc).__name__}: {exc}",
+                ).model_dump_json())
         elif cmd.get("cmd") == "shutdown":
             return
 

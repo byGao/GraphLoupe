@@ -49,7 +49,7 @@ def build_graph(step_delay: float = 0.0):
     async def llm(state: State) -> dict[str, Any]:
         if step_delay:
             await asyncio.sleep(step_delay)
-        reply = await model.ainvoke(state["messages"])
+        reply = await model.ainvoke(state.get("messages") or [])
         return {"messages": [reply]}
 
     g = StateGraph(State)
@@ -107,7 +107,7 @@ def build_manual_graph(spy: Callable[[], None] | None = None, step_delay: float 
 
     def ask(state: State) -> dict[str, Any]:
         _side_effect().result()  # idempotent pre-interrupt effect (engineering §10 ledger)
-        answer = manual_infer(state["messages"] or [AIMessage(content="(no input)")])
+        answer = manual_infer(state.get("messages") or [AIMessage(content="(no input)")])
         return {"messages": [AIMessage(content=str(answer))]}
 
     g = StateGraph(State)

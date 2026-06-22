@@ -7,6 +7,17 @@ import type { ServerEvent } from "../../protocol";
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = acquireVsCodeApi();
 
+/** Post a StartRun with the user-supplied JSON input (your graph's initial state). */
+function sendRun(inputText: string): void {
+  let input: unknown = {};
+  try {
+    input = JSON.parse(inputText || "{}");
+  } catch {
+    input = {};
+  }
+  vscode.postMessage({ v: "0.1.0", corr: null, type: "start_run", threadId: null, input, providerMode: "manual" });
+}
+
 /** Post a Resume ClientCommand (text or tool_call) back through the extension/sidecar. */
 function sendResume(p: ManualRequest, draft: string): void {
   let payload: unknown;
@@ -91,13 +102,9 @@ function layout(nodes: string[], edges: [string, string][]): Record<string, { x:
   return pos;
 }
 
-const startRun = {
-  v: "0.1.0", corr: null, type: "start_run",
-  threadId: null, input: { messages: [], steps: 0 }, providerMode: "manual",
-};
-
 export default function App() {
   const [state, setState] = useState<CanvasState>(initialState);
+  const [inputText, setInputText] = useState("{}");
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -130,17 +137,25 @@ export default function App() {
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: 8, borderBottom: "1px solid #30363d" }}>
-        <button disabled={state.running} onClick={() => vscode.postMessage(startRun)}>
+      <div style={{ padding: 8, borderBottom: "1px solid #30363d", display: "flex", alignItems: "center", gap: 8 }}>
+        <button disabled={state.running} onClick={() => sendRun(inputText)}>
           ▶ Run
         </button>
-        <span style={{ marginLeft: 12, color: "#8b949e" }}>
-          execution view (read-only){state.running ? " · running" : ""}
+        <input
+          value={inputText}
+          onChange={(e) => setInputText(e.target.value)}
+          spellCheck={false}
+          title="Initial state for your graph, as JSON (e.g. {&quot;repo_path&quot;: &quot;…&quot;})"
+          placeholder='input JSON, e.g. {"repo_path": "…"}'
+          style={{ flex: 1, maxWidth: 460, background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: "4px 8px", fontFamily: "monospace", fontSize: 12 }}
+        />
+        <span style={{ color: "#8b949e", fontSize: 12, whiteSpace: "nowrap" }}>
+          read-only{state.running ? " · running" : ""}
         </span>
       </div>
       {state.error && (
         <div style={{ padding: "8px 12px", background: "#3d1518", borderBottom: "1px solid #6b2020", color: "#ff7b72", fontSize: 13 }}>
-          ⚠ graph load failed — {state.error}
+          ⚠ {state.error}
         </div>
       )}
       <div style={{ flex: 1, position: "relative" }}>

@@ -57,6 +57,18 @@ def raises():
     raise RuntimeError("boom during build")
 
 
+def runtime_error():
+    """A graph whose node raises at run time (tests the worker surfacing run errors)."""
+    def boom(state: _State) -> dict[str, Any]:
+        raise KeyError("repo_path")  # mimics a user graph needing input it didn't get
+
+    g = StateGraph(_State)
+    g.add_node("boom", boom)
+    g.add_edge(START, "boom")
+    g.add_edge("boom", END)
+    return g.compile(checkpointer=MemorySaver())
+
+
 def manual_tool():
     """Manual-inference node expecting a structured tool_call (toolSchema requires 'query')."""
     from langchain_core.messages import AIMessage
