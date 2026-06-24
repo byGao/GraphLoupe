@@ -79,6 +79,19 @@ def test_continue_runs_to_next_breakpoint() -> None:
         assert _read_until(proc, "run_finished").status == "completed"
 
 
+def test_ac03_fork_time_travel_with_override() -> None:
+    with _worker("tests.user_graphs:linear3") as proc:
+        _send(proc, {"cmd": "set_breakpoint", "node": "b", "when": "before"})
+        _send(proc, {"cmd": "run", "input": {"log": []}})
+        ckpt = _read_until(proc, "breakpoint_hit").checkpointId   # checkpoint before b
+        _read_until(proc, "state_snapshot")
+        # fork from there with an override; re-runs b, c on a new runId
+        _send(proc, {"cmd": "fork", "checkpointId": ckpt, "stateOverride": {"log": ["X"]}})
+        _read_until(proc, "run_finished")                        # fork run finished
+        final = _read_until(proc, "state_snapshot")
+        assert "X" in final.snapshot.values["log"]               # override is in the forked state
+
+
 def test_ac04_no_checkpointer_ignores_breakpoints() -> None:
     with _worker("tests.user_graphs:no_checkpointer") as proc:
         _send(proc, {"cmd": "set_breakpoint", "node": "step", "when": "before"})

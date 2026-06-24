@@ -180,10 +180,43 @@ async def _await_resume(cmd_q: "asyncio.Queue[str | None]", intr_value: dict[str
         return Command(resume=resume_value)
 
 
-async def _await_debug(cmd_q: "asyncio.Queue[str | None]", graph: Any, thread_id: str,
-                       cfg: dict[str, Any], breakpoints: set[tuple[str, str]],
+async def _fork_run(graph: Any, nodes: set[str], thread_id: str, cmd: dict[str, Any]) -> None:
+    """Time-travel: re-run from a past checkpoint (optionally with a state override),
+    as a new runId on the same thread. Streams to completion + a final snapshot."""
+    ckpt_id = cmd.get("checkpointId")
+    override = cmd.get("stateOverride")
+    run_id = f"fork-{(ckpt_id or '')[:6]}"
+    base = {"configurable": {"thread_id": thread_id}}
+    # resolve the full checkpoint config (incl checkpoint_ns) from history; hand-built
+    # configs miss checkpoint_ns and update_state would KeyError.
+    target = next((s.config for s in graph.get_state_history(base)
+                   if s.config["configurable"].get("checkpoint_id") == ckpt_id), None)
+    if target is None:
+        _emit(P.ErrorEvent(code="checkpoint_not_found",
+                           message=f"no checkpoint {ckpt_id}").model_dump_json())
+        return
+    cfg = graph.update_state(target, override) if override else target
+    _emit(P.RunStarted(threadId=thread_id, runId=run_id).model_dump_json())
+    async for ev in graph.astream_events(None, version="v2", config=cfg):
+        name, node = ev["event"], ev.get("name")
+        if node not in nodes:
+            continue
+        if name == "on_chain_start":
+            _emit(P.NodeStart(threadId=thread_id, runId=run_id, node=node,
+                              checkpointId="-", ts=0.0).model_dump_json())
+        elif name == "on_chain_end":
+            _emit(P.NodeEnd(threadId=thread_id, runId=run_id, node=node,
+                            checkpointId="-", durationMs=0.0).model_dump_json())
+    _emit(P.RunFinished(threadId=thread_id, runId=run_id, status="completed").model_dump_json())
+    final = graph.get_state({"configurable": {"thread_id": thread_id}})
+    fckpt = final.config["configurable"]["checkpoint_id"] if final.config else "-"
+    _emit(_snapshot(thread_id, fckpt, final.values, {}))
+
+
+async def _await_debug(cmd_q: "asyncio.Queue[str | None]", graph: Any, nodes: set[str],
+                       thread_id: str, cfg: dict[str, Any], breakpoints: set[tuple[str, str]],
                        prev: dict[str, Any]) -> str:
-    """At a breakpoint pause: step / continue / inspect, until an advance is chosen."""
+    """At a breakpoint pause: step / continue / inspect / fork, until an advance is chosen."""
     while True:
         cmd = await _next_cmd(cmd_q, breakpoints)
         if cmd is None:
@@ -197,6 +230,8 @@ async def _await_debug(cmd_q: "asyncio.Queue[str | None]", graph: Any, thread_id
             state = graph.get_state(cfg)
             ckpt = state.config["configurable"]["checkpoint_id"] if state.config else "-"
             _emit(_snapshot(thread_id, ckpt, state.values, prev))
+        elif kind == "fork":
+            await _fork_run(graph, nodes, thread_id, cmd)
 
 
 async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
@@ -237,7 +272,7 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
                               when="before", checkpointId=ckpt).model_dump_json())
         _emit(_snapshot(thread_id, ckpt, state.values, prev))
         prev = dict(state.values)
-        action = await _await_debug(cmd_q, graph, thread_id, cfg, breakpoints, prev)
+        action = await _await_debug(cmd_q, graph, nodes, thread_id, cfg, breakpoints, prev)
         if action == "shutdown":
             return
         step_mode = action == "step"
