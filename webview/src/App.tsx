@@ -1,7 +1,10 @@
 import { useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
-import { initialState, needsGraphSelection, reduce, type CanvasState, type ManualRequest } from "./model";
+import {
+  initialState, needsGraphSelection, reduce,
+  type CanvasState, type ManualRequest, type Paused, type Snapshot,
+} from "./model";
 import type { ServerEvent } from "../../protocol";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
@@ -36,6 +39,54 @@ function sendResume(p: ManualRequest, draft: string): void {
     v: "0.1.0", corr: null, type: "resume",
     threadId: p.threadId, interruptId: p.interruptId, payload,
   });
+}
+
+function postCmd(msg: Record<string, unknown>): void {
+  vscode.postMessage({ v: "0.1.0", corr: null, ...msg });
+}
+
+function DebugPanel({ paused, snapshot }: { paused: Paused; snapshot: Snapshot | null }) {
+  const [override, setOverride] = useState("");
+  return (
+    <div style={{ borderTop: "1px solid #30363d", background: "#11161d", padding: "10px 14px", maxHeight: "45%", overflow: "auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <strong style={{ color: "#79c0ff" }}>‖ paused @ {paused.node}</strong>
+        <span style={{ color: "#6e7681", fontSize: 12 }}>checkpoint {paused.checkpointId.slice(0, 8)}</span>
+        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
+        <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
+      </div>
+      <div style={{ display: "flex", gap: 10 }}>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>State</div>
+          <pre style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, whiteSpace: "pre-wrap", margin: 0, maxHeight: 140, overflow: "auto" }}>
+            {snapshot ? JSON.stringify(snapshot.values, null, 2) : "…"}
+          </pre>
+        </div>
+        <div style={{ flex: 1 }}>
+          <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>Diff (last super-step)</div>
+          <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, maxHeight: 80, overflow: "auto" }}>
+            {(snapshot?.diff ?? []).map((d, i) => (
+              <div key={i} style={{ color: d.op === "add" ? "#3fb950" : d.op === "remove" ? "#f85149" : "#d29922" }}>
+                {d.op === "add" ? "+" : d.op === "remove" ? "−" : "~"} {d.channel}
+              </div>
+            ))}
+          </div>
+          <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
+            <input
+              value={override} onChange={(e) => setOverride(e.target.value)} spellCheck={false}
+              placeholder='override JSON (optional)'
+              style={{ flex: 1, background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: "3px 6px", fontFamily: "monospace", fontSize: 11 }}
+            />
+            <button style={{ fontSize: 12 }} onClick={() => {
+              let stateOverride: unknown = null;
+              if (override.trim()) { try { stateOverride = JSON.parse(override); } catch { stateOverride = null; } }
+              postCmd({ type: "fork", threadId: "run", checkpointId: paused.checkpointId, stateOverride });
+            }}>Fork ↩</button>
+          </div>
+        </div>
+      </div>
+    </div>
+  );
 }
 
 function ManualPanel({ pending }: { pending: ManualRequest }) {
@@ -105,6 +156,17 @@ function layout(nodes: string[], edges: [string, string][]): Record<string, { x:
 export default function App() {
   const [state, setState] = useState<CanvasState>(initialState);
   const [inputText, setInputText] = useState("{}");
+  const [breakpoints, setBreakpoints] = useState<Set<string>>(new Set());
+
+  const toggleBreakpoint = (node: string) => {
+    setBreakpoints((bps) => {
+      const next = new Set(bps);
+      const on = !next.has(node);
+      if (on) next.add(node); else next.delete(node);
+      postCmd({ type: on ? "set_breakpoint" : "clear_breakpoint", node, when: "before" });
+      return next;
+    });
+  };
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
@@ -123,12 +185,14 @@ export default function App() {
       data: { label: id },
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
-      style:
-        id === state.active
+      style: {
+        ...(id === state.active
           ? { border: "2px solid #3fb950", background: "#10301a", color: "#56d364" }
-          : undefined,
+          : {}),
+        ...(breakpoints.has(id) ? { boxShadow: "0 0 0 2px #f85149" } : {}),
+      },
     }));
-  }, [state.nodes, state.edges, state.active]);
+  }, [state.nodes, state.edges, state.active, breakpoints]);
 
   const edges: Edge[] = useMemo(
     () => state.edges.map(([s, t], i) => ({ id: `e${i}`, source: s, target: t })),
@@ -159,7 +223,7 @@ export default function App() {
         </div>
       )}
       <div style={{ flex: 1, position: "relative" }}>
-        <ReactFlow nodes={nodes} edges={edges} fitView>
+        <ReactFlow nodes={nodes} edges={edges} fitView onNodeClick={(_, n) => toggleBreakpoint(n.id)}>
           <Background />
           <Controls />
         </ReactFlow>
@@ -187,6 +251,7 @@ export default function App() {
         )}
       </div>
       {state.pending && <ManualPanel pending={state.pending} />}
+      {state.paused && !state.pending && <DebugPanel paused={state.paused} snapshot={state.snapshot} />}
     </div>
   );
 }

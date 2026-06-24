@@ -13,7 +13,10 @@ describe("canvas reducer", () => {
   });
 
   it("node_start highlights, node_end clears", () => {
-    let s: CanvasState = { nodes: ["llm"], edges: [], active: null, running: true, error: null, pending: null };
+    let s: CanvasState = {
+      nodes: ["llm"], edges: [], active: null, running: true, error: null,
+      pending: null, paused: null, snapshot: null, checkpoints: [],
+    };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
     s = reduce(s, ev({ type: "node_end", node: "llm" }));
@@ -45,6 +48,17 @@ describe("canvas reducer", () => {
     expect(s.pending?.expects).toBe("text");
     s = reduce(s, ev({ type: "node_start", node: "ask" }));  // resume re-run clears it
     expect(s.pending).toBeNull();
+  });
+
+  it("breakpoint_hit -> paused + checkpoint; state_snapshot -> snapshot; run_finished clears", () => {
+    let s = reduce(initialState, ev({ type: "breakpoint_hit", node: "b", when: "before", checkpointId: "c1" }));
+    expect(s.paused).toEqual({ node: "b", checkpointId: "c1" });
+    expect(s.checkpoints).toEqual(["c1"]);
+    s = reduce(s, ev({ type: "state_snapshot", snapshot: { values: { log: ["a"] }, diff: [{ channel: "log", op: "add", before: null, after: ["a"] }] } }));
+    expect(s.snapshot?.values).toEqual({ log: ["a"] });
+    s = reduce(s, ev({ type: "run_finished", status: "completed" }));
+    expect(s.paused).toBeNull();
+    expect(s.snapshot).toBeNull();
   });
 
   it("needsGraphSelection: true with no graph, false once a graph loads", () => {

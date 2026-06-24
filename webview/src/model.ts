@@ -15,6 +15,10 @@ export interface ManualRequest {
   toolSchema: unknown | null;
 }
 
+export interface DiffEntry { channel: string; op: string; before?: unknown; after?: unknown }
+export interface Snapshot { values: Record<string, unknown>; diff: DiffEntry[] }
+export interface Paused { node: string; checkpointId: string }
+
 export interface CanvasState {
   nodes: string[];
   edges: [string, string][];
@@ -22,10 +26,14 @@ export interface CanvasState {
   running: boolean;
   error: string | null;
   pending: ManualRequest | null;  // manual inference awaiting a pasted answer
+  paused: Paused | null;          // stopped at a breakpoint (debugging)
+  snapshot: Snapshot | null;      // state at the current pause
+  checkpoints: string[];          // checkpoint ids seen (newest first) for time-travel
 }
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
+  paused: null, snapshot: null, checkpoints: [],
 };
 
 /** Show the "Select Graph" CTA only when no graph is loaded (covers graph_load_failed,
@@ -40,10 +48,19 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
     case "graph":
       return { ...state, nodes: ev.nodes, edges: ev.edges, error: null };
     case "run_started":
-      return { ...state, running: true, active: null };
+      return { ...state, running: true, active: null, paused: null, snapshot: null };
     case "node_start":
-      // a node (re)starting clears any prior pending manual request (resume re-run, P1)
-      return { ...state, active: ev.node, pending: null };
+      // a node (re)starting clears any prior pause (manual resume / step / continue)
+      return { ...state, active: ev.node, pending: null, paused: null };
+    case "breakpoint_hit":
+      return {
+        ...state,
+        active: ev.node,
+        paused: { node: ev.node, checkpointId: ev.checkpointId },
+        checkpoints: [ev.checkpointId, ...state.checkpoints.filter((c) => c !== ev.checkpointId)],
+      };
+    case "state_snapshot":
+      return { ...state, snapshot: { values: ev.snapshot.values, diff: ev.snapshot.diff ?? [] } };
     case "node_end":
       return { ...state, active: state.active === ev.node ? null : state.active };
     case "manual_inference_required":
@@ -56,7 +73,7 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
         },
       };
     case "run_finished":
-      return { ...state, running: false, active: null, pending: null };
+      return { ...state, running: false, active: null, pending: null, paused: null, snapshot: null };
     case "error":
       // graph_load_failed (and other sidecar errors) -> surface, don't blank-canvas.
       return { ...state, error: `${ev.code}: ${ev.message}`, running: false };
