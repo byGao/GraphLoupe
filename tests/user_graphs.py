@@ -5,6 +5,7 @@ These stand in for "a user's own langgraph project". `custom` is a distinct shap
 """
 from __future__ import annotations
 
+import operator
 import os
 import time
 from typing import Annotated, Any, TypedDict
@@ -66,6 +67,28 @@ def runtime_error():
     g.add_node("boom", boom)
     g.add_edge(START, "boom")
     g.add_edge("boom", END)
+    return g.compile(checkpointer=MemorySaver())
+
+
+class _Log(TypedDict):
+    log: Annotated[list, operator.add]
+
+
+def linear3():
+    """a -> b -> c with a checkpointer; each node appends its name to `log`.
+    For breakpoint / step / diff tests (diff shows log growing)."""
+    def mk(name: str):
+        def node(state: _Log) -> dict[str, Any]:
+            return {"log": [name]}
+        return node
+
+    g = StateGraph(_Log)
+    for n in ("a", "b", "c"):
+        g.add_node(n, mk(n))
+    g.add_edge(START, "a")
+    g.add_edge("a", "b")
+    g.add_edge("b", "c")
+    g.add_edge("c", END)
     return g.compile(checkpointer=MemorySaver())
 
 

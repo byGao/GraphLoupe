@@ -50,14 +50,44 @@ def _emit(line: str) -> None:
     sys.stdout.flush()
 
 
-def _pending_interrupt(graph: Any, cfg: dict[str, Any]) -> tuple[str, str, dict[str, Any]] | None:
-    """If the graph is paused at an interrupt, return (node, interrupt_id, payload)."""
-    state = graph.get_state(cfg)
+def _interrupt_from_state(state: Any) -> tuple[str, str, dict[str, Any]] | None:
+    """If paused at a manual interrupt() (not a breakpoint), return (node, id, payload)."""
     if state.next and state.tasks and state.tasks[0].interrupts:
         intr = state.tasks[0].interrupts[0]
-        node = state.next[0]
-        return node, intr.id, dict(intr.value)
+        return state.next[0], intr.id, dict(intr.value)
     return None
+
+
+def _bp_lists(breakpoints: set[tuple[str, str]]) -> tuple[list[str], list[str]]:
+    before = sorted({n for n, w in breakpoints if w == "before"})
+    after = sorted({n for n, w in breakpoints if w == "after"})
+    return before, after
+
+
+def _jsonsafe(value: Any) -> Any:
+    """Coerce arbitrary graph state to JSON-safe values (objects -> str)."""
+    return json.loads(json.dumps(value, default=str))
+
+
+def _diff(prev: dict[str, Any], cur: dict[str, Any]) -> list[P.StateDiffEntry]:
+    entries: list[P.StateDiffEntry] = []
+    for key, val in cur.items():
+        if key not in prev:
+            entries.append(P.StateDiffEntry(channel=key, before=None, after=_jsonsafe(val), op="add"))
+        elif prev[key] != val:
+            entries.append(P.StateDiffEntry(
+                channel=key, before=_jsonsafe(prev[key]), after=_jsonsafe(val), op="update"))
+    for key, val in prev.items():
+        if key not in cur:
+            entries.append(P.StateDiffEntry(channel=key, before=_jsonsafe(val), after=None, op="remove"))
+    return entries
+
+
+def _snapshot(thread_id: str, checkpoint_id: str, values: dict[str, Any],
+              prev: dict[str, Any]) -> str:
+    snap = P.StateSnapshot(values=_jsonsafe(values), diff=_diff(prev, values))
+    return P.StateSnapshotEvent(
+        threadId=thread_id, checkpointId=checkpoint_id, snapshot=snap).model_dump_json()
 
 
 def _manual_required(thread_id: str, node: str, intr_id: str, val: dict[str, Any]) -> str:
@@ -94,9 +124,18 @@ def _validate_resume(
     return {"name": payload.get("name"), "args": args}, None
 
 
-async def _stream(graph: Any, nodes: set[str], source: Any, thread_id: str) -> None:
+_SHUTDOWN = object()
+
+
+async def _stream(graph: Any, nodes: set[str], source: Any, thread_id: str,
+                  before: list[str] | None = None, after: list[str] | None = None) -> None:
     cfg = {"configurable": {"thread_id": thread_id}}
-    async for ev in graph.astream_events(source, version="v2", config=cfg):
+    kwargs: dict[str, Any] = {}
+    if before is not None:
+        kwargs["interrupt_before"] = before
+    if after:
+        kwargs["interrupt_after"] = after
+    async for ev in graph.astream_events(source, version="v2", config=cfg, **kwargs):
         name, node = ev["event"], ev.get("name")
         if node not in nodes:
             continue
@@ -108,36 +147,101 @@ async def _stream(graph: Any, nodes: set[str], source: Any, thread_id: str) -> N
                             checkpointId="-", durationMs=0.0).model_dump_json())
 
 
+async def _next_cmd(cmd_q: "asyncio.Queue[str | None]",
+                    breakpoints: set[tuple[str, str]]) -> dict[str, Any] | None:
+    """Next stdin command; breakpoint set/clear are applied transparently (any time)."""
+    while True:
+        raw = await cmd_q.get()
+        if raw is None:
+            return None
+        cmd = json.loads(raw)
+        kind = cmd.get("cmd")
+        if kind == "set_breakpoint":
+            breakpoints.add((cmd["node"], cmd.get("when", "before")))
+            continue
+        if kind == "clear_breakpoint":
+            breakpoints.discard((cmd["node"], cmd.get("when", "before")))
+            continue
+        return cmd
+
+
+async def _await_resume(cmd_q: "asyncio.Queue[str | None]", intr_value: dict[str, Any],
+                        node: str, breakpoints: set[tuple[str, str]]) -> Any:
+    while True:
+        cmd = await _next_cmd(cmd_q, breakpoints)
+        if cmd is None:
+            return _SHUTDOWN
+        if cmd.get("cmd") != "resume":
+            continue
+        resume_value, err = _validate_resume(intr_value, cmd.get("payload") or {})
+        if err:
+            _emit(P.ErrorEvent(code=err, message=f"resume rejected: {err}", node=node).model_dump_json())
+            continue
+        return Command(resume=resume_value)
+
+
+async def _await_debug(cmd_q: "asyncio.Queue[str | None]", graph: Any, thread_id: str,
+                       cfg: dict[str, Any], breakpoints: set[tuple[str, str]],
+                       prev: dict[str, Any]) -> str:
+    """At a breakpoint pause: step / continue / inspect, until an advance is chosen."""
+    while True:
+        cmd = await _next_cmd(cmd_q, breakpoints)
+        if cmd is None:
+            return "shutdown"
+        kind = cmd.get("cmd")
+        if kind == "step":
+            return "step"
+        if kind in ("run", "resume"):  # ▶ Run / resume while paused = continue to next bp
+            return "continue"
+        if kind == "get_state":
+            state = graph.get_state(cfg)
+            ckpt = state.config["configurable"]["checkpoint_id"] if state.config else "-"
+            _emit(_snapshot(thread_id, ckpt, state.values, prev))
+
+
 async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
-               cmd_q: "asyncio.Queue[str | None]") -> None:
+               cmd_q: "asyncio.Queue[str | None]", breakpoints: set[tuple[str, str]]) -> None:
     _emit(P.RunStarted(threadId=thread_id, runId=thread_id).model_dump_json())
     cfg = {"configurable": {"thread_id": thread_id}}
-    # interrupt/pause/time-travel need a checkpointer; a graph compiled without one
-    # (e.g. plain g.compile()) simply can't pause, so don't probe get_state on it.
+    # interrupt/breakpoints/time-travel need a checkpointer; a graph compiled without one
+    # can't pause, so just stream it to completion.
     has_checkpointer = getattr(graph, "checkpointer", None) is not None
+    prev: dict[str, Any] = {}
     source: Any = run_input
+    step_mode = False
     while True:
-        await _stream(graph, nodes, source, thread_id)
-        pending = _pending_interrupt(graph, cfg) if has_checkpointer else None
-        if pending is None:
+        before: list[str] | None = None
+        after: list[str] | None = None
+        if has_checkpointer:
+            bp_before, after = _bp_lists(breakpoints)
+            before = sorted(nodes) if step_mode else bp_before
+        await _stream(graph, nodes, source, thread_id, before, after)
+        step_mode = False
+        state = graph.get_state(cfg) if has_checkpointer else None
+        if state is None or not state.next:
             _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="completed").model_dump_json())
             return
-        node, intr_id, val = pending
-        _emit(_manual_required(thread_id, node, intr_id, val))
-        resumed = False
-        while not resumed:  # await a valid resume; invalid ones keep the run paused
-            raw = await cmd_q.get()
-            if raw is None:
+        intr = _interrupt_from_state(state)
+        if intr is not None:  # manual inference (PHASE 2)
+            node, intr_id, val = intr
+            _emit(_manual_required(thread_id, node, intr_id, val))
+            outcome = await _await_resume(cmd_q, val, node, breakpoints)
+            if outcome is _SHUTDOWN:
                 return
-            cmd = json.loads(raw)
-            if cmd.get("cmd") != "resume":
-                continue
-            resume_value, err = _validate_resume(val, cmd.get("payload") or {})
-            if err:
-                _emit(P.ErrorEvent(code=err, message=f"resume rejected: {err}", node=node).model_dump_json())
-                continue
-            source = Command(resume=resume_value)
-            resumed = True
+            source = outcome
+            continue
+        # breakpoint / step pause (PHASE 3)
+        node = state.next[0]
+        ckpt = state.config["configurable"]["checkpoint_id"]
+        _emit(P.BreakpointHit(threadId=thread_id, runId=thread_id, node=node,
+                              when="before", checkpointId=ckpt).model_dump_json())
+        _emit(_snapshot(thread_id, ckpt, state.values, prev))
+        prev = dict(state.values)
+        action = await _await_debug(cmd_q, graph, thread_id, cfg, breakpoints, prev)
+        if action == "shutdown":
+            return
+        step_mode = action == "step"
+        source = None
 
 
 async def _amain(graph: Any, nodes: set[str]) -> None:
@@ -152,15 +256,15 @@ async def _amain(graph: Any, nodes: set[str]) -> None:
         loop.call_soon_threadsafe(cmd_q.put_nowait, None)
 
     threading.Thread(target=reader, daemon=True).start()
+    breakpoints: set[tuple[str, str]] = set()
     while True:
-        raw = await cmd_q.get()
-        if raw is None:
+        cmd = await _next_cmd(cmd_q, breakpoints)  # set/clear breakpoints apply while idle too
+        if cmd is None:
             return
-        cmd = json.loads(raw)
         if cmd.get("cmd") == "run":
             try:
                 await _run(graph, nodes, cmd.get("threadId") or "run",
-                           cmd.get("input") or {"messages": [], "steps": 0}, cmd_q)
+                           cmd.get("input") or {"messages": [], "steps": 0}, cmd_q, breakpoints)
             except Exception as exc:  # a user-graph node raised: surface it, stay alive
                 _emit(P.ErrorEvent(
                     code="internal",

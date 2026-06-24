@@ -14,6 +14,7 @@ import json
 import os
 import subprocess  # nosec B404 - used to isolate the user graph in a subprocess
 import sys
+from typing import Any
 
 from fastapi import FastAPI, WebSocket, WebSocketDisconnect
 
@@ -57,6 +58,25 @@ def _graph_load_failed(message: str) -> str:
     return P.ErrorEvent(code="graph_load_failed", message=message).model_dump_json()
 
 
+def _to_worker(cmd: P.ClientCommand) -> dict[str, Any] | None:
+    """Translate a ClientCommand into the worker's stdin command (cmd = the type)."""
+    if isinstance(cmd, P.StartRun):
+        return {"cmd": "run", "threadId": cmd.threadId or "run", "input": cmd.input}
+    if isinstance(cmd, P.Resume):
+        return {"cmd": "resume", "payload": cmd.payload.model_dump()}
+    if isinstance(cmd, P.SetBreakpoint):
+        return {"cmd": "set_breakpoint", "node": cmd.node, "when": cmd.when}
+    if isinstance(cmd, P.ClearBreakpoint):
+        return {"cmd": "clear_breakpoint", "node": cmd.node, "when": cmd.when}
+    if isinstance(cmd, P.Step):
+        return {"cmd": "step"}
+    if isinstance(cmd, P.GetState):
+        return {"cmd": "get_state", "checkpointId": cmd.checkpointId}
+    if isinstance(cmd, P.Fork):
+        return {"cmd": "fork", "checkpointId": cmd.checkpointId, "stateOverride": cmd.stateOverride}
+    return None
+
+
 @app.websocket("/ws")
 async def ws_endpoint(ws: WebSocket) -> None:
     await ws.accept()
@@ -93,13 +113,9 @@ async def ws_endpoint(ws: WebSocket) -> None:
                 cmd = P.ClientCommandAdapter.validate_json(raw)
             except Exception:  # nosec B112 - skip malformed client commands, keep the relay alive
                 continue
-            if isinstance(cmd, P.StartRun):
-                run = {"cmd": "run", "threadId": cmd.threadId or "run", "input": cmd.input}
-                stdin.write(json.dumps(run) + "\n")
-                stdin.flush()
-            elif isinstance(cmd, P.Resume):
-                resume = {"cmd": "resume", "payload": cmd.payload.model_dump()}
-                stdin.write(json.dumps(resume) + "\n")
+            wire = _to_worker(cmd)
+            if wire is not None:
+                stdin.write(json.dumps(wire) + "\n")
                 stdin.flush()
     except WebSocketDisconnect:
         pass
