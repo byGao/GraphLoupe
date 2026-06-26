@@ -1,6 +1,6 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { buildInput, defaultForm, formFields, initialState, needsGraphSelection, reduce, type CanvasState } from "./model";
+import { buildInput, defaultForm, formFields, initialState, needsGraphSelection, reduce, tokenSummary, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
@@ -16,7 +16,7 @@ describe("canvas reducer", () => {
     let s: CanvasState = {
       nodes: ["llm"], edges: [], active: null, running: true, error: null,
       pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
-      projectRoot: null,
+      projectRoot: null, tokens: {}, llmPending: {},
     };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
@@ -106,6 +106,48 @@ describe("canvas reducer", () => {
   it("graph event carries projectRoot into state", () => {
     const s = reduce(initialState, ev({ type: "graph", nodes: ["a"], edges: [], projectRoot: "/r" }));
     expect(s.projectRoot).toBe("/r");
+  });
+
+  it("token economy: aggregates per-node prompt/completion, totals, heaviest; run_started resets", () => {
+    const lstart = (node: string, id: string, prompt: number, source = "sidecar_estimate") =>
+      ev({ type: "llm_start", threadId: "t", runId: "t", node, llmEventId: id, model: "m",
+        promptTokens: { prompt, completion: null, source } });
+    const lend = (id: string, completion: number, source = "sidecar_estimate", prompt = 0) =>
+      ev({ type: "llm_end", llmEventId: id, tokens: { prompt, completion, source }, finishReason: null });
+
+    let s = reduce(initialState, ev({ type: "run_started" }));
+    s = reduce(s, lstart("llm", "a", 100));
+    s = reduce(s, lend("a", 12));                          // estimate end -> keep start's prompt
+    s = reduce(s, lstart("critic", "b", 30));
+    s = reduce(s, lend("b", 5));
+    s = reduce(s, lstart("llm", "c", 50));                 // llm called twice
+    s = reduce(s, lend("c", 8));
+
+    const sum = tokenSummary(s);
+    expect(sum.rows.map((r) => r.node)).toEqual(["llm", "critic"]);   // sorted by total desc
+    expect(sum.rows[0]).toMatchObject({ node: "llm", calls: 2, prompt: 150, completion: 20, estimated: true });
+    expect(sum.total).toEqual({ calls: 3, prompt: 180, completion: 25 });
+    expect(sum.heaviest).toBe("llm");
+    expect(sum.estimated).toBe(true);
+
+    s = reduce(s, ev({ type: "run_started" }));            // next run clears the tally
+    expect(tokenSummary(s).rows).toEqual([]);
+  });
+
+  it("token economy: api_usage end overrides the start estimate and is not flagged estimated", () => {
+    let s = reduce(initialState, ev({ type: "run_started" }));
+    s = reduce(s, ev({ type: "llm_start", threadId: "t", runId: "t", node: "llm", llmEventId: "a",
+      model: "gpt", promptTokens: { prompt: 99, completion: null, source: "sidecar_estimate" } }));
+    s = reduce(s, ev({ type: "llm_end", llmEventId: "a",
+      tokens: { prompt: 120, completion: 40, source: "api_usage" }, finishReason: "stop" }));
+    const row = tokenSummary(s).rows[0];
+    expect(row).toMatchObject({ node: "llm", prompt: 120, completion: 40, estimated: false });  // exact wins
+  });
+
+  it("token economy: llm_end without a matching start is ignored", () => {
+    const s = reduce({ ...initialState, running: true },
+      ev({ type: "llm_end", llmEventId: "ghost", tokens: { prompt: 0, completion: 9, source: "sidecar_estimate" }, finishReason: null }));
+    expect(tokenSummary(s).rows).toEqual([]);
   });
 
   it("needsGraphSelection: true with no graph, false once a graph loads", () => {

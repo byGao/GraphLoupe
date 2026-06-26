@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState, type CSSProperties } from "react";
 import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  buildInput, defaultForm, formFields, initialState, needsGraphSelection, reduce,
+  buildInput, defaultForm, formFields, initialState, needsGraphSelection, reduce, tokenSummary,
   type CanvasState, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import type { ServerEvent } from "../../protocol";
@@ -120,6 +120,62 @@ function ManualPanel({ pending }: { pending: ManualRequest }) {
       <button style={{ marginTop: 6, padding: "6px 14px", fontSize: 13 }} onClick={() => sendResume(pending, draft)}>
         Send resume
       </button>
+    </div>
+  );
+}
+
+/** Token economy panel (PHASE 4): per-node prompt/completion + run total, heaviest
+ *  node flagged as the manual-optimization target. Hidden until a run emits LLM events
+ *  (graphs with no LLM node simply show nothing). */
+function TokenPanel({ state }: { state: CanvasState }) {
+  const [open, setOpen] = useState(true);
+  const s = useMemo(() => tokenSummary(state), [state]);
+  if (s.rows.length === 0) return null;
+  const num: CSSProperties = { textAlign: "right", padding: "2px 8px", fontFamily: "var(--mono)" };
+  const head: CSSProperties = { ...num, color: "var(--muted)", fontWeight: 400 };
+  return (
+    <div className="gl-panel" style={{ padding: "8px 14px", maxHeight: "38%", overflow: "auto" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+        <strong style={{ color: "var(--pause)" }}>⟁ Token economy</strong>
+        {s.heaviest && (
+          <span className="gl-help">heaviest: <span className="gl-node">{s.heaviest}</span>
+            {s.estimated ? " · 估算值，僅供相對比較" : ""}</span>
+        )}
+        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => setOpen((o) => !o)}>
+          {open ? "收合" : "展開"}
+        </button>
+      </div>
+      {open && (
+        <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
+          <thead>
+            <tr>
+              <th style={{ ...head, textAlign: "left" }}>node</th>
+              <th style={head}>calls</th><th style={head}>prompt</th>
+              <th style={head}>completion</th><th style={head}>total</th>
+            </tr>
+          </thead>
+          <tbody>
+            {s.rows.map((r) => (
+              <tr key={r.node}>
+                <td style={{ padding: "2px 8px", fontFamily: "var(--mono)", color: r.node === s.heaviest ? "var(--pause)" : "var(--text)" }}>
+                  {r.node}{r.estimated ? " ~" : ""}
+                </td>
+                <td style={num}>{r.calls}</td>
+                <td style={num}>{r.prompt}</td>
+                <td style={num}>{r.completion}</td>
+                <td style={{ ...num, color: "var(--node)" }}>{r.prompt + r.completion}</td>
+              </tr>
+            ))}
+            <tr style={{ borderTop: "1px solid var(--line)" }}>
+              <td style={{ padding: "3px 8px", color: "var(--muted)" }}>run 累計</td>
+              <td style={{ ...num, color: "var(--muted)" }}>{s.total.calls}</td>
+              <td style={{ ...num, color: "var(--muted)" }}>{s.total.prompt}</td>
+              <td style={{ ...num, color: "var(--muted)" }}>{s.total.completion}</td>
+              <td style={{ ...num, color: "var(--run)" }}>{s.total.prompt + s.total.completion}</td>
+            </tr>
+          </tbody>
+        </table>
+      )}
     </div>
   );
 }
@@ -308,6 +364,7 @@ export default function App() {
           </div>
         )}
       </div>
+      <TokenPanel state={state} />
       {state.pending && <ManualPanel pending={state.pending} />}
       {state.paused && !state.pending && <DebugPanel paused={state.paused} snapshot={state.snapshot} />}
     </div>

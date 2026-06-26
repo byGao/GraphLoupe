@@ -127,6 +127,83 @@ def _validate_resume(
 _SHUTDOWN = object()
 
 
+def _estimate_tokens(text: str) -> int:
+    """Cheap sidecar-side estimate (~4 chars/token) when no provider tokenizer is
+    available — P8: never report an estimate as exact. See protocol.TokenSource."""
+    return max(1, len(text) // 4) if text else 0
+
+
+def _text_of(content: Any) -> str:
+    """Flatten a message/content into text: str as-is, list of parts -> their text,
+    BaseMessage -> its .content, nested lists -> recurse."""
+    if content is None:
+        return ""
+    if isinstance(content, str):
+        return content
+    inner = getattr(content, "content", None)
+    if inner is not None:
+        return _text_of(inner)
+    if isinstance(content, dict):
+        return str(content.get("text", ""))
+    if isinstance(content, (list, tuple)):
+        return " ".join(_text_of(p) for p in content)
+    return str(content)
+
+
+def _llm_event(ev: dict[str, Any], thread_id: str, run_id: str) -> str | None:
+    """Translate an astream_events chat-model event into an LlmStart/LlmEnd line.
+    PIN: the node is metadata.langgraph_node (ev.name is the model class). P8: fall
+    back to sidecar_estimate when the model carries no usage_metadata."""
+    name = ev["event"]
+    data = ev.get("data") or {}
+    if name == "on_chat_model_start":
+        md = ev.get("metadata") or {}
+        node = md.get("langgraph_node")
+        if not node:
+            return None
+        inp = data.get("input")
+        msgs = inp.get("messages") if isinstance(inp, dict) else inp
+        prompt = _estimate_tokens(_text_of(msgs))
+        return P.LlmStart(
+            threadId=thread_id, runId=run_id, node=node, llmEventId=ev["run_id"],
+            model=md.get("ls_model_type") or ev.get("name"),
+            promptTokens=P.TokenCount(prompt=prompt, completion=None, source="sidecar_estimate"),
+        ).model_dump_json()
+    # on_chat_model_end
+    out = data.get("output")
+    usage = getattr(out, "usage_metadata", None)
+    if usage:
+        tokens = P.TokenCount(prompt=int(usage.get("input_tokens") or 0),
+                              completion=usage.get("output_tokens"), source="api_usage")
+    else:
+        tokens = P.TokenCount(prompt=0, completion=_estimate_tokens(_text_of(out)),
+                              source="sidecar_estimate")
+    return P.LlmEnd(llmEventId=ev["run_id"], tokens=tokens,
+                    finishReason=getattr(out, "response_metadata", {}).get("finish_reason")
+                    if out is not None else None).model_dump_json()
+
+
+def _emit_event(ev: dict[str, Any], nodes: set[str], thread_id: str, run_id: str) -> None:
+    """Emit the ServerEvent for one astream_events item: node chain start/end, plus
+    LLM start/end for token economy (PHASE 4). Chat-model events are keyed by
+    metadata.langgraph_node, not ev.name, so they bypass the node-name filter."""
+    name = ev["event"]
+    if name in ("on_chat_model_start", "on_chat_model_end"):
+        line = _llm_event(ev, thread_id, run_id)
+        if line:
+            _emit(line)
+        return
+    node = ev.get("name")
+    if node not in nodes:
+        return
+    if name == "on_chain_start":
+        _emit(P.NodeStart(threadId=thread_id, runId=run_id, node=node,
+                          checkpointId="-", ts=0.0).model_dump_json())
+    elif name == "on_chain_end":
+        _emit(P.NodeEnd(threadId=thread_id, runId=run_id, node=node,
+                        checkpointId="-", durationMs=0.0).model_dump_json())
+
+
 async def _stream(graph: Any, nodes: set[str], source: Any, thread_id: str,
                   before: list[str] | None = None, after: list[str] | None = None) -> None:
     cfg = {"configurable": {"thread_id": thread_id}}
@@ -136,15 +213,7 @@ async def _stream(graph: Any, nodes: set[str], source: Any, thread_id: str,
     if after:
         kwargs["interrupt_after"] = after
     async for ev in graph.astream_events(source, version="v2", config=cfg, **kwargs):
-        name, node = ev["event"], ev.get("name")
-        if node not in nodes:
-            continue
-        if name == "on_chain_start":
-            _emit(P.NodeStart(threadId=thread_id, runId=thread_id, node=node,
-                              checkpointId="-", ts=0.0).model_dump_json())
-        elif name == "on_chain_end":
-            _emit(P.NodeEnd(threadId=thread_id, runId=thread_id, node=node,
-                            checkpointId="-", durationMs=0.0).model_dump_json())
+        _emit_event(ev, nodes, thread_id, thread_id)
 
 
 async def _next_cmd(cmd_q: "asyncio.Queue[str | None]",
@@ -198,15 +267,7 @@ async def _fork_run(graph: Any, nodes: set[str], thread_id: str, cmd: dict[str, 
     cfg = graph.update_state(target, override) if override else target
     _emit(P.RunStarted(threadId=thread_id, runId=run_id).model_dump_json())
     async for ev in graph.astream_events(None, version="v2", config=cfg):
-        name, node = ev["event"], ev.get("name")
-        if node not in nodes:
-            continue
-        if name == "on_chain_start":
-            _emit(P.NodeStart(threadId=thread_id, runId=run_id, node=node,
-                              checkpointId="-", ts=0.0).model_dump_json())
-        elif name == "on_chain_end":
-            _emit(P.NodeEnd(threadId=thread_id, runId=run_id, node=node,
-                            checkpointId="-", durationMs=0.0).model_dump_json())
+        _emit_event(ev, nodes, thread_id, run_id)
     _emit(P.RunFinished(threadId=thread_id, runId=run_id, status="completed").model_dump_json())
     final = graph.get_state({"configurable": {"thread_id": thread_id}})
     fckpt = final.config["configurable"]["checkpoint_id"] if final.config else "-"

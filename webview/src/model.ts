@@ -15,6 +15,11 @@ export interface ManualRequest {
   toolSchema: unknown | null;
 }
 
+/** Per-node token tally for the economy panel (PHASE 4). `estimated` is true if any
+ *  measurement fell back to a sidecar estimate (no provider usage_metadata, P8). */
+export interface NodeTokens { node: string; calls: number; prompt: number; completion: number; estimated: boolean }
+interface PendingLlm { node: string; prompt: number }
+
 export interface DiffEntry { channel: string; op: string; before?: unknown; after?: unknown }
 export interface Snapshot { values: Record<string, unknown>; diff: DiffEntry[] }
 export interface Paused { node: string; checkpointId: string }
@@ -31,11 +36,14 @@ export interface CanvasState {
   checkpoints: string[];          // checkpoint ids seen (newest first) for time-travel
   inputSchema: Record<string, unknown> | null;  // graph input JSON Schema for the run form
   projectRoot: string | null;     // project root the graph loaded from, for form defaults
+  tokens: Record<string, NodeTokens>;  // per-node token tally for the current run (PHASE 4)
+  llmPending: Record<string, PendingLlm>;  // in-flight llm calls by llmEventId (start -> end)
 }
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
   paused: null, snapshot: null, checkpoints: [], inputSchema: null, projectRoot: null,
+  tokens: {}, llmPending: {},
 };
 
 export interface FormField {
@@ -112,13 +120,59 @@ export function needsGraphSelection(state: CanvasState): boolean {
   return state.nodes.length === 0 && !state.running;
 }
 
+export interface TokenSummary {
+  rows: NodeTokens[];                 // per-node, sorted by total tokens desc
+  total: { calls: number; prompt: number; completion: number };
+  heaviest: string | null;           // node with the highest total (manual-suggestion target)
+  estimated: boolean;                // any row used a sidecar estimate (P8) -> "相對比較" caveat
+}
+
+/** Roll up per-node token tallies for the economy panel: sorted rows, run total,
+ *  the heaviest node (what a human should look at first), and whether any figure
+ *  is an estimate. Pure — unit-tested in model.test.ts. */
+export function tokenSummary(state: CanvasState): TokenSummary {
+  const tot = (t: NodeTokens) => t.prompt + t.completion;
+  const rows = Object.values(state.tokens).sort((a, b) => tot(b) - tot(a));
+  const total = rows.reduce(
+    (acc, r) => ({ calls: acc.calls + r.calls, prompt: acc.prompt + r.prompt, completion: acc.completion + r.completion }),
+    { calls: 0, prompt: 0, completion: 0 },
+  );
+  return {
+    rows, total,
+    heaviest: rows.length ? rows[0].node : null,
+    estimated: rows.some((r) => r.estimated),
+  };
+}
+
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
     case "graph":
       return { ...state, nodes: ev.nodes, edges: ev.edges, error: null,
         inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null };
     case "run_started":
-      return { ...state, running: true, active: null, paused: null, snapshot: null };
+      return { ...state, running: true, active: null, paused: null, snapshot: null,
+        tokens: {}, llmPending: {} };
+    case "llm_start":
+      // buffer the call; its prompt is finalized at llm_end (exact if api_usage arrives)
+      return { ...state, llmPending: { ...state.llmPending,
+        [ev.llmEventId]: { node: ev.node, prompt: ev.promptTokens?.prompt ?? 0 } } };
+    case "llm_end": {
+      const p = state.llmPending[ev.llmEventId];
+      if (!p) return state;  // end without a matching start: ignore
+      const apiUsage = ev.tokens?.source === "api_usage";
+      const prompt = apiUsage ? (ev.tokens?.prompt ?? 0) : p.prompt;  // exact wins over estimate
+      const completion = ev.tokens?.completion ?? 0;
+      const prev = state.tokens[p.node] ?? { node: p.node, calls: 0, prompt: 0, completion: 0, estimated: false };
+      const rest = { ...state.llmPending };
+      delete rest[ev.llmEventId];
+      return { ...state,
+        tokens: { ...state.tokens, [p.node]: {
+          node: p.node, calls: prev.calls + 1,
+          prompt: prev.prompt + prompt, completion: prev.completion + completion,
+          estimated: prev.estimated || !apiUsage,
+        } },
+        llmPending: rest };
+    }
     case "node_start":
       // a node (re)starting clears any prior pause (manual resume / step / continue)
       return { ...state, active: ev.node, pending: null, paused: null };
