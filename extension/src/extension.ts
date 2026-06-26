@@ -78,6 +78,14 @@ function connect(port: number, onEvent: (ev: unknown) => void): Promise<WebSocke
   });
 }
 
+/** postMessage to the webview, swallowing the rejection that fires when the
+ *  webview was disposed (e.g. on window reload) between a late sidecar event
+ *  and its delivery. Without this the floating Thenable surfaces as an
+ *  unhandled promise rejection with a VS-Code-internal-only stack. */
+function postToWebview(message: unknown): void {
+  void panel?.webview.postMessage(message).then(undefined, () => undefined);
+}
+
 function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string {
   const js = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "webview.js"));
   const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "webview.css"));
@@ -92,7 +100,7 @@ async function pickFolder(field: string): Promise<void> {
     canSelectFolders: true, canSelectFiles: false, canSelectMany: false, openLabel: "Use folder",
   });
   if (picked && picked[0]) {
-    panel?.webview.postMessage({ type: "folderPicked", field, path: picked[0].fsPath });
+    postToWebview({ type: "folderPicked", field, path: picked[0].fsPath });
   }
 }
 
@@ -118,15 +126,15 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
   if (entry) env.GRAPHLOUPE_GRAPH = entry;
   if (projectRoot) env.GRAPHLOUPE_PROJECT_ROOT = projectRoot;
 
-  const port = await freePort();
-  sidecar = spawn("python", ["-m", "graphloupe_sidecar.server", "--port", String(port)], {
-    cwd: context.extensionPath,
-    env,
-  });
-  sidecar.stderr?.on("data", (d) => console.error("[sidecar]", d.toString()));
-
   try {
-    socket = await connect(port, (ev) => panel?.webview.postMessage(ev));
+    const port = await freePort();
+    sidecar = spawn("python", ["-m", "graphloupe_sidecar.server", "--port", String(port)], {
+      cwd: context.extensionPath,
+      env,
+    });
+    sidecar.on("error", (err) => console.error("[graphloupe] sidecar spawn", err));
+    sidecar.stderr?.on("data", (d) => console.error("[sidecar]", d.toString()));
+    socket = await connect(port, (ev) => postToWebview(ev));
   } catch (err) {
     vscode.window.showErrorMessage(`GraphLoupe: ${(err as Error).message}`);
     killSidecar();
@@ -147,14 +155,19 @@ export function activate(context: vscode.ExtensionContext): void {
         // ClientCommand forwarded to the current session's socket.
         panel.webview.onDidReceiveMessage((msg) => {
           if (msg && msg.type === "ui:selectGraph") {
-            vscode.commands.executeCommand("graphloupe.selectGraph");
+            void Promise.resolve(vscode.commands.executeCommand("graphloupe.selectGraph"))
+              .then(undefined, (err) => console.error("[graphloupe] selectGraph", err));
             return;
           }
           if (msg && msg.type === "ui:pickFolder") {
-            pickFolder(msg.field);
+            void pickFolder(msg.field).catch((err) => console.error("[graphloupe] pickFolder", err));
             return;
           }
-          socket?.send(JSON.stringify(msg));
+          try {
+            socket?.send(JSON.stringify(msg));
+          } catch (err) {
+            console.error("[graphloupe] socket send", err);
+          }
         });
         panel.onDidDispose(() => {
           killSidecar();
