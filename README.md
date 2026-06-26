@@ -45,27 +45,21 @@ GraphLoupe runs *your* compiled LangGraph — you never edit `settings.json` by 
    that imports langgraph and calls `.compile()`. Pick one.
    - The choice is saved to **your project's** `.vscode/settings.json`
      (`graphloupe.graphEntry`, e.g. `pipeline.graph:build_app`) — per-workspace.
-3. **Enter the run input** (the JSON box next to ▶ Run) = your graph's initial state,
-   then **▶ Run**.
+3. **Fill the run-input form** above ▶ Run, then **▶ Run**. GraphLoupe reads your
+   graph's input schema (`get_input_jsonschema`) and renders a field per input:
+   path-like fields (`repo_path`, `out_dir`, …) get a **Browse…** folder picker,
+   others get typed inputs; list/dict fields default to empty. Toggle **JSON** for a
+   raw box if you'd rather hand-edit.
 4. Edit your graph, then **"GraphLoupe: Reload Graph"** to re-load and re-run.
 
 ### Example — a real graph that needs input
 
 Say your project's `pipeline/graph.py` has `def build_app(): ... return g.compile()`
 and its first node reads `state["repo_path"]`. After Select Graph picks
-`pipeline.graph:build_app`, set the input box to your graph's initial state:
-
-```json
-{
-  "repo_path": "c:/path/to/some/repo",
-  "target": "demo",
-  "out_dir": "c:/path/to/output",
-  "worklist": [], "nodes": {}, "edges": [], "review_queue": [], "notes": []
-}
-```
-
-Then ▶ Run. If a node needs a key you didn't provide, the error banner names it
-(e.g. `run failed: KeyError: 'repo_path'`) — add it and Run again.
+`pipeline.graph:build_app`, the form shows `repo_path` and `out_dir` with **Browse…**
+buttons and `target` as a text field (lists/dicts like `worklist`/`nodes` default to
+empty). Fill them and ▶ Run — no JSON needed. If a node still needs a key you left
+blank, the error banner names it (e.g. `run failed: KeyError: 'repo_path'`).
 
 ## Manual inference (the differentiator)
 
@@ -89,7 +83,7 @@ can fix it.
 |---------|---------------|
 | "Select Graph" finds nothing | Your factory isn't named build_graph/build_app/… and doesn't call `.compile()` in a file importing langgraph. Rename it, or set `graphloupe.graphEntry` manually. |
 | Banner: `graph_load_failed: ...` | The entry couldn't import / has no such callable. The message names the cause. |
-| Banner: `run failed: KeyError: 'x'` | Your graph needs input key `x` — add it to the run-input JSON box. |
+| Banner: `run failed: KeyError: 'x'` | Your graph needs input key `x` — fill that field in the run-input form (or the JSON box). |
 | `No checkpointer set` (fixed) | A graph compiled without a checkpointer runs to completion but **cannot pause / manual-infer / time-travel** (those need `compile(checkpointer=…)`). |
 | Run looks stuck / too long | There's no breakpoint/Stop yet (debugging is a later phase). Use **"GraphLoupe: Reload Graph"** to abort and restart. |
 
