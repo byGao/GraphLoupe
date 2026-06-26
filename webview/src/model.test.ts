@@ -77,6 +77,18 @@ describe("canvas reducer", () => {
       .toEqual({ repo_path: "/r", count: 3, worklist: [], nodes: {} });  // typed + empty defaults
   });
 
+  it("formFields surfaces schema title/description/default for the form", () => {
+    const schema = { properties: {
+      repo_path: { type: "string", title: "Repo Path", description: "Absolute path to the repo" },
+      depth: { type: "integer", default: 1 },
+    } };
+    const fields = formFields(schema);
+    const repo = fields.find((f) => f.name === "repo_path");
+    expect(repo?.title).toBe("Repo Path");
+    expect(repo?.description).toBe("Absolute path to the repo");
+    expect(fields.find((f) => f.name === "depth")?.placeholder).toBe("1");  // default as placeholder
+  });
+
   it("needsGraphSelection: true with no graph, false once a graph loads", () => {
     expect(needsGraphSelection(initialState)).toBe(true);
     const loaded = reduce(initialState, ev({ type: "graph", nodes: ["a"], edges: [] }));

@@ -1,4 +1,4 @@
-import { Fragment, useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
@@ -52,9 +52,9 @@ function postCmd(msg: Record<string, unknown>): void {
 function DebugPanel({ paused, snapshot }: { paused: Paused; snapshot: Snapshot | null }) {
   const [override, setOverride] = useState("");
   return (
-    <div style={{ borderTop: "1px solid #30363d", background: "#11161d", padding: "10px 14px", maxHeight: "45%", overflow: "auto" }}>
+    <div className="gl-panel" style={{ padding: "10px 14px", maxHeight: "45%", overflow: "auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-        <strong style={{ color: "#79c0ff" }}>‖ paused @ {paused.node}</strong>
+        <strong style={{ color: "var(--pause)" }}>‖ paused @ {paused.node}</strong>
         <span style={{ color: "#6e7681", fontSize: 12 }}>checkpoint {paused.checkpointId.slice(0, 8)}</span>
         <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
         <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
@@ -98,9 +98,9 @@ function ManualPanel({ pending }: { pending: ManualRequest }) {
   useEffect(() => setDraft(""), [pending.interruptId]);
   const isText = pending.expects === "text";
   return (
-    <div style={{ borderTop: "1px solid #30363d", background: "#11161d", padding: "10px 14px", maxHeight: "45%", overflow: "auto" }}>
+    <div className="gl-panel" style={{ padding: "10px 14px", maxHeight: "45%", overflow: "auto" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
-        <strong style={{ color: "#d29922" }}>Manual inference</strong>
+        <strong style={{ color: "var(--pause)" }}>Manual inference</strong>
         <span style={{ color: "#6e7681", fontSize: 12 }}>
           node: {pending.node} · prompt ~{pending.promptTokens} tok (sidecar est) · expects: {pending.expects}
         </span>
@@ -198,10 +198,11 @@ export default function App() {
       sourcePosition: Position.Right,
       targetPosition: Position.Left,
       style: {
+        fontFamily: "var(--mono)",
         ...(id === state.active
-          ? { border: "2px solid #3fb950", background: "#10301a", color: "#56d364" }
-          : {}),
-        ...(breakpoints.has(id) ? { boxShadow: "0 0 0 2px #f85149" } : {}),
+          ? { border: "2px solid var(--run)", background: "rgba(76,195,138,0.14)", color: "var(--run)" }
+          : { border: "1px solid var(--line)" }),
+        ...(breakpoints.has(id) ? { boxShadow: "0 0 0 2px var(--danger)" } : {}),
       },
     }));
   }, [state.nodes, state.edges, state.active, breakpoints]);
@@ -213,7 +214,7 @@ export default function App() {
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: 8, borderBottom: "1px solid #30363d" }}>
+      <div style={{ padding: 8, borderBottom: "1px solid var(--line)" }}>
         <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
           <button
             disabled={state.running}
@@ -235,36 +236,41 @@ export default function App() {
           )}
         </div>
         {state.inputSchema && !showRaw ? (
-          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "5px 8px", alignItems: "center" }}>
+          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
             {formFields(state.inputSchema).map((f) => (
-              <Fragment key={f.name}>
-                <label style={{ color: "#c9d1d9", fontSize: 12 }} title={f.title}>{f.name}</label>
-                <input
-                  value={form[f.name] ?? ""}
-                  onChange={(e) => setForm({ ...form, [f.name]: e.target.value })}
-                  type={f.type === "integer" || f.type === "number" ? "number" : "text"}
-                  placeholder={f.type}
-                  spellCheck={false}
-                  style={{ background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: "3px 8px", fontFamily: "monospace", fontSize: 12 }}
-                />
-                {f.isPath
-                  ? <button style={{ fontSize: 11 }} onClick={() => vscode.postMessage({ type: "ui:pickFolder", field: f.name })}>Browse…</button>
-                  : <span />}
-              </Fragment>
+              <div key={f.name}>
+                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+                  <label style={{ minWidth: 120, fontSize: 12 }} title={f.title}>{f.name}</label>
+                  <input
+                    style={{ flex: 1 }}
+                    value={form[f.name] ?? ""}
+                    onChange={(e) => setForm({ ...form, [f.name]: e.target.value })}
+                    type={f.type === "integer" || f.type === "number" ? "number" : "text"}
+                    placeholder={f.placeholder}
+                    spellCheck={false}
+                  />
+                  {f.isPath && (
+                    <button onClick={() => vscode.postMessage({ type: "ui:pickFolder", field: f.name })}>Browse…</button>
+                  )}
+                </div>
+                {f.description && (
+                  <div className="gl-help" style={{ marginLeft: 128, marginTop: 2 }}>{f.description}</div>
+                )}
+              </div>
             ))}
           </div>
         ) : (
           <input
+            style={{ marginTop: 8, width: "100%" }}
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
             spellCheck={false}
             placeholder='input JSON, e.g. {"repo_path": "…"}'
-            style={{ marginTop: 8, width: "100%", background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: "4px 8px", fontFamily: "monospace", fontSize: 12 }}
           />
         )}
       </div>
       {state.error && (
-        <div style={{ padding: "8px 12px", background: "#3d1518", borderBottom: "1px solid #6b2020", color: "#ff7b72", fontSize: 13 }}>
+        <div style={{ padding: "8px 12px", background: "rgba(240,114,107,0.12)", borderBottom: "1px solid var(--danger)", color: "var(--danger)", fontSize: 13 }}>
           ⚠ {state.error}
         </div>
       )}

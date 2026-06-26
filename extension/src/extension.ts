@@ -83,7 +83,7 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
   const css = webview.asWebviewUri(vscode.Uri.joinPath(extensionUri, "dist", "webview.css"));
   return `<!DOCTYPE html><html><head><meta charset="utf-8">
 <link rel="stylesheet" href="${css}">
-<style>html,body,#root{height:100%;margin:0;background:#0d1117;color:#c9d1d9}</style>
+<style>html,body,#root{height:100%;margin:0}body{background:#0e1116}</style>
 </head><body><div id="root"></div><script src="${js}"></script></body></html>`;
 }
 

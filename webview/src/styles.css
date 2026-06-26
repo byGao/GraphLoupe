@@ -1,0 +1,81 @@
+/* GraphLoupe webview design tokens + base styles (ui-design-pass).
+ * Colors encode execution state (run/pause/danger/node) — structure is information.
+ * Type pairing: sans for the tool's voice (UI/labels), mono for the machine's voice
+ * (state JSON, node names, prompts, checkpoint ids). */
+:root {
+  --bg: #0e1116;          /* deep slate-black, not pure black */
+  --surface: #161b22;
+  --surface-2: #0c1014;
+  --line: #283039;
+  --text: #d6dee8;
+  --muted: #8b97a6;
+  --node: #6cb6ff;        /* graph structure */
+  --run: #4cc38a;         /* running / active */
+  --pause: #e3b341;       /* paused / breakpoint */
+  --danger: #f0726b;      /* error */
+  --accent: #b69bff;      /* loupe violet, used sparingly */
+  --radius: 7px;
+  --sans: "Inter", "Segoe UI", system-ui, -apple-system, sans-serif;
+  --mono: "JetBrains Mono", "Cascadia Code", "SFMono-Regular", ui-monospace, Consolas, monospace;
+}
+
+* { box-sizing: border-box; }
+html, body, #root { height: 100%; margin: 0; }
+body {
+  background: var(--bg);
+  color: var(--text);
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* the machine's voice */
+code, pre, input, textarea, .mono { font-family: var(--mono); }
+pre {
+  background: var(--surface-2);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  padding: 8px 10px;
+  font-size: 11px;
+}
+
+button {
+  font-family: var(--sans);
+  font-size: 12px;
+  color: var(--text);
+  background: var(--surface);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 4px 12px;
+  cursor: pointer;
+  transition: border-color .12s ease, background .12s ease;
+}
+button:hover:not(:disabled) { border-color: var(--node); }
+button:disabled { opacity: .45; cursor: default; }
+
+input, textarea {
+  background: var(--surface-2);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 5px 9px;
+  font-size: 12px;
+}
+input::placeholder, textarea::placeholder { color: var(--muted); }
+
+:focus-visible,
+input:focus, textarea:focus { outline: 2px solid var(--node); outline-offset: 1px; }
+
+/* utility */
+.gl-panel { background: var(--surface); border-top: 1px solid var(--line); }
+.gl-muted { color: var(--muted); }
+.gl-help { color: var(--muted); font-size: 11px; }
+.gl-run { color: var(--run); }
+.gl-pause { color: var(--pause); }
+.gl-danger { color: var(--danger); }
+.gl-node { color: var(--node); }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}

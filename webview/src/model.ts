@@ -37,14 +37,20 @@ export const initialState: CanvasState = {
   paused: null, snapshot: null, checkpoints: [], inputSchema: null,
 };
 
-export interface FormField { name: string; type: string; isPath: boolean; title?: string }
+export interface FormField {
+  name: string; type: string; isPath: boolean;
+  title?: string; description?: string; placeholder?: string;
+}
 
 const PATH_RE = /path|dir|file|out|repo/i;
 
+interface SchemaProp { type?: string; title?: string; description?: string; default?: unknown }
+
 /** Editable top-level fields from the input schema (string/number/boolean);
- *  array/object fields are defaulted (not shown). Path-like strings flagged. */
+ *  array/object fields are defaulted (not shown). Carries title/description/default
+ *  (from a Pydantic Field(description=…) state) so the form can explain each param. */
 export function formFields(schema: Record<string, unknown> | null): FormField[] {
-  const props = (schema?.properties ?? {}) as Record<string, { type?: string; title?: string }>;
+  const props = (schema?.properties ?? {}) as Record<string, SchemaProp>;
   return Object.entries(props)
     .filter(([, p]) => ["string", "integer", "number", "boolean"].includes(p?.type ?? "string"))
     .map(([name, p]) => ({
@@ -52,6 +58,8 @@ export function formFields(schema: Record<string, unknown> | null): FormField[] 
       type: p?.type ?? "string",
       isPath: (p?.type ?? "string") === "string" && PATH_RE.test(name),
       title: p?.title,
+      description: p?.description,
+      placeholder: p?.default !== undefined && p?.default !== null ? String(p.default) : (p?.type ?? "string"),
     }));
 }
 
