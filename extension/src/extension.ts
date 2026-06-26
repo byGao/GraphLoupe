@@ -87,6 +87,15 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
 </head><body><div id="root"></div><script src="${js}"></script></body></html>`;
 }
 
+async function pickFolder(field: string): Promise<void> {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectFolders: true, canSelectFiles: false, canSelectMany: false, openLabel: "Use folder",
+  });
+  if (picked && picked[0]) {
+    panel?.webview.postMessage({ type: "folderPicked", field, path: picked[0].fsPath });
+  }
+}
+
 function killSidecar(): void {
   socket?.close();
   socket = undefined;
@@ -139,6 +148,10 @@ export function activate(context: vscode.ExtensionContext): void {
         panel.webview.onDidReceiveMessage((msg) => {
           if (msg && msg.type === "ui:selectGraph") {
             vscode.commands.executeCommand("graphloupe.selectGraph");
+            return;
+          }
+          if (msg && msg.type === "ui:pickFolder") {
+            pickFolder(msg.field);
             return;
           }
           socket?.send(JSON.stringify(msg));

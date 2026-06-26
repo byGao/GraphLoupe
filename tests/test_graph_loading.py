@@ -59,6 +59,13 @@ def test_ac02_worker_emits_graph_load_failed(entry: str) -> None:
         assert msg.code == "graph_load_failed"
 
 
+def test_topology_carries_input_schema() -> None:
+    with _worker("tests.user_graphs:custom") as proc:
+        msg = _first(proc)
+        assert isinstance(msg, P.GraphTopology)
+        assert msg.inputSchema is not None and "properties" in msg.inputSchema
+
+
 def test_ac04_user_graph_built_in_worker_process(tmp_path: Path) -> None:
     pidfile = tmp_path / "pid.txt"
     with _worker("tests.user_graphs:custom", {"GRAPHLOUPE_PIDFILE": str(pidfile)}) as proc:

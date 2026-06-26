@@ -92,6 +92,9 @@ class GraphTopology(Envelope):
     threadId: ThreadId | None = None
     nodes: list[NodeName]
     edges: list[tuple[NodeName, NodeName]]
+    # JSON Schema of the graph's input (get_input_jsonschema) for the run-input form;
+    # None if introspection failed. Added run-input-form.
+    inputSchema: dict[str, Any] | None = None
 
 
 class RunStarted(Envelope):

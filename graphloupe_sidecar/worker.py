@@ -320,9 +320,14 @@ def main() -> None:
         graph = _load(args.entry)
         g = graph.get_graph()
         nodes = set(g.nodes) - {"__start__", "__end__"}
+        try:
+            input_schema = graph.get_input_jsonschema()
+        except Exception:  # introspection is best-effort; fall back to the raw JSON box
+            input_schema = None
         _emit(P.GraphTopology(
             nodes=sorted(g.nodes),
             edges=sorted((e.source, e.target) for e in g.edges),
+            inputSchema=input_schema,
         ).model_dump_json())
     except Exception as exc:  # import error / missing attr / build raises
         _emit(P.ErrorEvent(code="graph_load_failed",

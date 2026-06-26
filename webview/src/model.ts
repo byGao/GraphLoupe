@@ -29,12 +29,50 @@ export interface CanvasState {
   paused: Paused | null;          // stopped at a breakpoint (debugging)
   snapshot: Snapshot | null;      // state at the current pause
   checkpoints: string[];          // checkpoint ids seen (newest first) for time-travel
+  inputSchema: Record<string, unknown> | null;  // graph input JSON Schema for the run form
 }
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
-  paused: null, snapshot: null, checkpoints: [],
+  paused: null, snapshot: null, checkpoints: [], inputSchema: null,
 };
+
+export interface FormField { name: string; type: string; isPath: boolean; title?: string }
+
+const PATH_RE = /path|dir|file|out|repo/i;
+
+/** Editable top-level fields from the input schema (string/number/boolean);
+ *  array/object fields are defaulted (not shown). Path-like strings flagged. */
+export function formFields(schema: Record<string, unknown> | null): FormField[] {
+  const props = (schema?.properties ?? {}) as Record<string, { type?: string; title?: string }>;
+  return Object.entries(props)
+    .filter(([, p]) => ["string", "integer", "number", "boolean"].includes(p?.type ?? "string"))
+    .map(([name, p]) => ({
+      name,
+      type: p?.type ?? "string",
+      isPath: (p?.type ?? "string") === "string" && PATH_RE.test(name),
+      title: p?.title,
+    }));
+}
+
+/** Build the graph input object from form values: typed scalars + empty array/object defaults. */
+export function buildInput(
+  schema: Record<string, unknown> | null,
+  values: Record<string, string>,
+): Record<string, unknown> {
+  const props = (schema?.properties ?? {}) as Record<string, { type?: string }>;
+  const out: Record<string, unknown> = {};
+  for (const [name, p] of Object.entries(props)) {
+    const type = p?.type ?? "string";
+    const raw = values[name];
+    if (type === "array") out[name] = [];
+    else if (type === "object") out[name] = {};
+    else if (type === "integer" || type === "number") out[name] = raw ? Number(raw) : 0;
+    else if (type === "boolean") out[name] = raw === "true";
+    else if (raw !== undefined && raw !== "") out[name] = raw;
+  }
+  return out;
+}
 
 /** Show the "Select Graph" CTA only when no graph is loaded (covers graph_load_failed,
  *  which leaves nodes empty). A run-time error with a graph already on screen keeps the
@@ -46,7 +84,7 @@ export function needsGraphSelection(state: CanvasState): boolean {
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
     case "graph":
-      return { ...state, nodes: ev.nodes, edges: ev.edges, error: null };
+      return { ...state, nodes: ev.nodes, edges: ev.edges, error: null, inputSchema: ev.inputSchema ?? null };
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null };
     case "node_start":

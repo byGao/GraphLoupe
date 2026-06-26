@@ -62,6 +62,7 @@ export const GraphTopology = z.object({
   threadId: z.string().nullable(),
   nodes: z.array(z.string()),
   edges: z.array(z.tuple([z.string(), z.string()])),
+  inputSchema: z.record(z.any()).nullable(),
 });
 export const RunStarted = z.object({
   ...env, type: z.literal("run_started"),

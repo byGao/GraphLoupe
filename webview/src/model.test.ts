@@ -1,6 +1,6 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { initialState, needsGraphSelection, reduce, type CanvasState } from "./model";
+import { buildInput, formFields, initialState, needsGraphSelection, reduce, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
@@ -15,7 +15,7 @@ describe("canvas reducer", () => {
   it("node_start highlights, node_end clears", () => {
     let s: CanvasState = {
       nodes: ["llm"], edges: [], active: null, running: true, error: null,
-      pending: null, paused: null, snapshot: null, checkpoints: [],
+      pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
     };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
@@ -59,6 +59,22 @@ describe("canvas reducer", () => {
     s = reduce(s, ev({ type: "run_finished", status: "completed" }));
     expect(s.paused).toBeNull();
     expect(s.snapshot).toBeNull();
+  });
+
+  it("formFields filters array/object + flags paths; buildInput types + defaults", () => {
+    const schema = {
+      properties: {
+        repo_path: { type: "string", title: "Repo Path" },
+        count: { type: "integer" },
+        worklist: { type: "array" },
+        nodes: { type: "object" },
+      },
+    };
+    const fields = formFields(schema);
+    expect(fields.map((f) => f.name)).toEqual(["repo_path", "count"]);   // array/object hidden
+    expect(fields.find((f) => f.name === "repo_path")?.isPath).toBe(true);
+    expect(buildInput(schema, { repo_path: "/r", count: "3" }))
+      .toEqual({ repo_path: "/r", count: 3, worklist: [], nodes: {} });  // typed + empty defaults
   });
 
   it("needsGraphSelection: true with no graph, false once a graph loads", () => {

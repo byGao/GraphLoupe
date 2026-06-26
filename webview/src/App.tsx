@@ -1,8 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
+import { Fragment, useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  initialState, needsGraphSelection, reduce,
+  buildInput, formFields, initialState, needsGraphSelection, reduce,
   type CanvasState, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import type { ServerEvent } from "../../protocol";
@@ -10,7 +10,11 @@ import type { ServerEvent } from "../../protocol";
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = acquireVsCodeApi();
 
-/** Post a StartRun with the user-supplied JSON input (your graph's initial state). */
+/** Post a StartRun with the graph's initial-state input object. */
+function sendRunObject(input: unknown): void {
+  vscode.postMessage({ v: "0.1.0", corr: null, type: "start_run", threadId: null, input, providerMode: "manual" });
+}
+
 function sendRun(inputText: string): void {
   let input: unknown = {};
   try {
@@ -18,7 +22,7 @@ function sendRun(inputText: string): void {
   } catch {
     input = {};
   }
-  vscode.postMessage({ v: "0.1.0", corr: null, type: "start_run", threadId: null, input, providerMode: "manual" });
+  sendRunObject(input);
 }
 
 /** Post a Resume ClientCommand (text or tool_call) back through the extension/sidecar. */
@@ -156,6 +160,8 @@ function layout(nodes: string[], edges: [string, string][]): Record<string, { x:
 export default function App() {
   const [state, setState] = useState<CanvasState>(initialState);
   const [inputText, setInputText] = useState("{}");
+  const [form, setForm] = useState<Record<string, string>>({});
+  const [showRaw, setShowRaw] = useState(false);
   const [breakpoints, setBreakpoints] = useState<Set<string>>(new Set());
 
   const toggleBreakpoint = (node: string) => {
@@ -170,6 +176,12 @@ export default function App() {
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
+      const msg = e.data as { type?: string; field?: string; path?: string };
+      if (msg?.type === "folderPicked" && msg.field) {
+        const field = msg.field;
+        setForm((f) => ({ ...f, [field]: msg.path ?? "" }));
+        return;
+      }
       const ev = e.data as ServerEvent;
       if (ev && typeof ev.type === "string") setState((s) => reduce(s, ev));
     };
@@ -201,21 +213,55 @@ export default function App() {
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: 8, borderBottom: "1px solid #30363d", display: "flex", alignItems: "center", gap: 8 }}>
-        <button disabled={state.running} onClick={() => sendRun(inputText)}>
-          ▶ Run
-        </button>
-        <input
-          value={inputText}
-          onChange={(e) => setInputText(e.target.value)}
-          spellCheck={false}
-          title="Initial state for your graph, as JSON (e.g. {&quot;repo_path&quot;: &quot;…&quot;})"
-          placeholder='input JSON, e.g. {"repo_path": "…"}'
-          style={{ flex: 1, maxWidth: 460, background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: "4px 8px", fontFamily: "monospace", fontSize: 12 }}
-        />
-        <span style={{ color: "#8b949e", fontSize: 12, whiteSpace: "nowrap" }}>
-          read-only{state.running ? " · running" : ""}
-        </span>
+      <div style={{ padding: 8, borderBottom: "1px solid #30363d" }}>
+        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
+          <button
+            disabled={state.running}
+            onClick={() =>
+              state.inputSchema && !showRaw
+                ? sendRunObject(buildInput(state.inputSchema, form))
+                : sendRun(inputText)
+            }
+          >
+            ▶ Run
+          </button>
+          <span style={{ color: "#8b949e", fontSize: 12 }}>
+            read-only{state.running ? " · running" : ""}
+          </span>
+          {state.inputSchema && (
+            <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => setShowRaw((r) => !r)}>
+              {showRaw ? "Form" : "JSON"}
+            </button>
+          )}
+        </div>
+        {state.inputSchema && !showRaw ? (
+          <div style={{ marginTop: 8, display: "grid", gridTemplateColumns: "auto 1fr auto", gap: "5px 8px", alignItems: "center" }}>
+            {formFields(state.inputSchema).map((f) => (
+              <Fragment key={f.name}>
+                <label style={{ color: "#c9d1d9", fontSize: 12 }} title={f.title}>{f.name}</label>
+                <input
+                  value={form[f.name] ?? ""}
+                  onChange={(e) => setForm({ ...form, [f.name]: e.target.value })}
+                  type={f.type === "integer" || f.type === "number" ? "number" : "text"}
+                  placeholder={f.type}
+                  spellCheck={false}
+                  style={{ background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: "3px 8px", fontFamily: "monospace", fontSize: 12 }}
+                />
+                {f.isPath
+                  ? <button style={{ fontSize: 11 }} onClick={() => vscode.postMessage({ type: "ui:pickFolder", field: f.name })}>Browse…</button>
+                  : <span />}
+              </Fragment>
+            ))}
+          </div>
+        ) : (
+          <input
+            value={inputText}
+            onChange={(e) => setInputText(e.target.value)}
+            spellCheck={false}
+            placeholder='input JSON, e.g. {"repo_path": "…"}'
+            style={{ marginTop: 8, width: "100%", background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: "4px 8px", fontFamily: "monospace", fontSize: 12 }}
+          />
+        )}
       </div>
       {state.error && (
         <div style={{ padding: "8px 12px", background: "#3d1518", borderBottom: "1px solid #6b2020", color: "#ff7b72", fontSize: 13 }}>

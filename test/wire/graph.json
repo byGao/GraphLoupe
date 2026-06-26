@@ -22,5 +22,13 @@
       "llm",
       "__end__"
     ]
-  ]
+  ],
+  "inputSchema": {
+    "properties": {
+      "repo_path": {
+        "type": "string",
+        "title": "Repo Path"
+      }
+    }
+  }
 }
