@@ -76,6 +76,27 @@ input:focus, textarea:focus { outline: 2px solid var(--node); outline-offset: 1p
 .gl-danger { color: var(--danger); }
 .gl-node { color: var(--node); }
 
+/* React Flow canvas: dark nodes with light labels (the library defaults to white
+ * nodes, which read as faint gray text on the dark canvas — poor contrast). State
+ * overrides (active/breakpoint) are applied inline in App.tsx and win over this. */
+.react-flow__node-default,
+.react-flow__node-input,
+.react-flow__node-output {
+  background: var(--surface);
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: var(--radius);
+  font-family: var(--mono);
+  font-size: 12px;
+  font-weight: 500;
+  box-shadow: 0 1px 2px rgba(0, 0, 0, .35);
+}
+.react-flow__node .react-flow__handle { background: var(--node); border: none; }
+.react-flow__edge-path { stroke: var(--line); stroke-width: 1.5; }
+.react-flow__controls-button {
+  background: var(--surface); color: var(--text); border-bottom: 1px solid var(--line); fill: var(--text);
+}
+
 @media (prefers-reduced-motion: reduce) {
   *, *::before, *::after { animation: none !important; transition: none !important; }
 }

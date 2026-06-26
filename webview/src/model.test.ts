@@ -1,6 +1,6 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { buildInput, formFields, initialState, needsGraphSelection, reduce, type CanvasState } from "./model";
+import { buildInput, defaultForm, formFields, initialState, needsGraphSelection, reduce, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
@@ -16,6 +16,7 @@ describe("canvas reducer", () => {
     let s: CanvasState = {
       nodes: ["llm"], edges: [], active: null, running: true, error: null,
       pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
+      projectRoot: null,
     };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
@@ -87,6 +88,24 @@ describe("canvas reducer", () => {
     expect(repo?.title).toBe("Repo Path");
     expect(repo?.description).toBe("Absolute path to the repo");
     expect(fields.find((f) => f.name === "depth")?.placeholder).toBe("1");  // default as placeholder
+  });
+
+  it("defaultForm pre-fills paths from project root and target from its basename", () => {
+    const fields = formFields({ properties: {
+      repo_path: { type: "string" }, out_dir: { type: "string" },
+      target: { type: "string" }, count: { type: "integer" },
+    } });
+    const vals = defaultForm(fields, "C:/work/WikiGraph/");
+    expect(vals.repo_path).toBe("C:/work/WikiGraph");      // root, trailing slash trimmed
+    expect(vals.out_dir).toBe("C:/work/WikiGraph/out");    // out-ish path -> root/out
+    expect(vals.target).toBe("WikiGraph");                 // basename, non-path string
+    expect(vals.count).toBeUndefined();                    // non-path scalar left blank
+    expect(defaultForm(fields, null)).toEqual({});         // no root -> nothing to seed
+  });
+
+  it("graph event carries projectRoot into state", () => {
+    const s = reduce(initialState, ev({ type: "graph", nodes: ["a"], edges: [], projectRoot: "/r" }));
+    expect(s.projectRoot).toBe("/r");
   });
 
   it("needsGraphSelection: true with no graph, false once a graph loads", () => {

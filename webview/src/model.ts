@@ -30,11 +30,12 @@ export interface CanvasState {
   snapshot: Snapshot | null;      // state at the current pause
   checkpoints: string[];          // checkpoint ids seen (newest first) for time-travel
   inputSchema: Record<string, unknown> | null;  // graph input JSON Schema for the run form
+  projectRoot: string | null;     // project root the graph loaded from, for form defaults
 }
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
-  paused: null, snapshot: null, checkpoints: [], inputSchema: null,
+  paused: null, snapshot: null, checkpoints: [], inputSchema: null, projectRoot: null,
 };
 
 export interface FormField {
@@ -82,6 +83,28 @@ export function buildInput(
   return out;
 }
 
+/** Pre-fill the run form from the project root so a graph that takes a repo_path /
+ *  out_dir starts runnable instead of blank. Path inputs default to the root (an
+ *  out/dist/build-ish one to root/out); a non-path "target/name/project" string to
+ *  the repo's basename. Schema defaults still win (callers merge user edits on top). */
+export function defaultForm(
+  fields: FormField[],
+  projectRoot: string | null,
+): Record<string, string> {
+  const out: Record<string, string> = {};
+  if (!projectRoot) return out;
+  const root = projectRoot.replace(/[\\/]+$/, "");
+  const base = root.split(/[\\/]/).pop() ?? "";
+  for (const f of fields) {
+    if (f.isPath) {
+      out[f.name] = /out|dist|build/i.test(f.name) ? `${root}/out` : root;
+    } else if (f.type === "string" && /target|name|project|repo/i.test(f.name)) {
+      out[f.name] = base;
+    }
+  }
+  return out;
+}
+
 /** Show the "Select Graph" CTA only when no graph is loaded (covers graph_load_failed,
  *  which leaves nodes empty). A run-time error with a graph already on screen keeps the
  *  graph + shows the error banner instead. */
@@ -92,7 +115,8 @@ export function needsGraphSelection(state: CanvasState): boolean {
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
     case "graph":
-      return { ...state, nodes: ev.nodes, edges: ev.edges, error: null, inputSchema: ev.inputSchema ?? null };
+      return { ...state, nodes: ev.nodes, edges: ev.edges, error: null,
+        inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null };
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null };
     case "node_start":

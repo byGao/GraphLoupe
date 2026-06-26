@@ -328,6 +328,7 @@ def main() -> None:
             nodes=sorted(g.nodes),
             edges=sorted((e.source, e.target) for e in g.edges),
             inputSchema=input_schema,
+            projectRoot=args.project_root or None,
         ).model_dump_json())
     except Exception as exc:  # import error / missing attr / build raises
         _emit(P.ErrorEvent(code="graph_load_failed",

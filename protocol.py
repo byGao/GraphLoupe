@@ -95,6 +95,9 @@ class GraphTopology(Envelope):
     # JSON Schema of the graph's input (get_input_jsonschema) for the run-input form;
     # None if introspection failed. Added run-input-form.
     inputSchema: dict[str, Any] | None = None
+    # Absolute project root the graph was loaded from, so the form can pre-fill
+    # path-like inputs (repo_path -> root, out_dir -> root/out). Added ui-design-pass.
+    projectRoot: str | None = None
 
 
 class RunStarted(Envelope):

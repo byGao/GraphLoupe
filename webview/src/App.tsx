@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from "react";
 import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  buildInput, formFields, initialState, needsGraphSelection, reduce,
+  buildInput, defaultForm, formFields, initialState, needsGraphSelection, reduce,
   type CanvasState, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import type { ServerEvent } from "../../protocol";
@@ -183,7 +183,13 @@ export default function App() {
         return;
       }
       const ev = e.data as ServerEvent;
-      if (ev && typeof ev.type === "string") setState((s) => reduce(s, ev));
+      if (ev && typeof ev.type === "string") {
+        setState((s) => reduce(s, ev));
+        if (ev.type === "graph") {
+          const seeded = defaultForm(formFields(ev.inputSchema ?? null), ev.projectRoot ?? null);
+          setForm((f) => ({ ...seeded, ...f }));  // pre-fill, but keep any user edits
+        }
+      }
     };
     window.addEventListener("message", onMsg);
     return () => window.removeEventListener("message", onMsg);
