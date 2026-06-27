@@ -1,6 +1,6 @@
 # GraphLoupe — a self-hosted LangGraph debugger for VS Code
 
-[![CI](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml/badge.svg)](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml)
+[![CI](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
 **Debug a LangGraph graph at the node level.** Step through execution, inspect and
