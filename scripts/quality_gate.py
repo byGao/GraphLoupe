@@ -2,18 +2,16 @@
 """
 GraphLoupe quality gate — L0..L3 runner.
 
-Invoked by the studio workflow `/phase-done graphloupe <phase-id>` via
-workflow/apps/graphloupe.manifest.json. Mirrors the test pyramid in
-workflow/stages/graphloupe/test-plan.html:
+A test pyramid for the cross-process contract and the framework PINs:
 
     L0  PINs (P1-P9) + PIN dump comparison
     L1  contract round-trip TS<->Py on the shared golden JSON
     L2  BDD scenarios
     L3  langgraph dev integration consistency
 
-STATUS: L0 is live (pin-dump-foundation). L1-L3 stay PENDING until protocol.ts
-and the BDD/integration layers land; a PENDING level exits non-zero so phase-done
-halts (a gate must never report a false green).
+STATUS: L0 is live. L1-L3 stay PENDING until protocol.ts and the BDD/integration
+layers land; a PENDING level exits non-zero so the gate halts (it must never
+report a false green).
 """
 from __future__ import annotations
 

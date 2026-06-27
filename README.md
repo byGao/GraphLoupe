@@ -3,8 +3,7 @@
 A LangGraph execution-visualization / step-debugging IDE, hosted as a VS Code
 Extension with a Python FastAPI sidecar. Point it at a LangGraph graph in your
 project and watch it render and run; pause LLM nodes for manual ("paste into any
-chat") inference. Design docs live in the monorepo at `workflow/stages/graphloupe/`;
-this repo holds the code + this guide.
+chat") inference.
 
 ## At a glance
 
@@ -161,7 +160,7 @@ can fix it.
 - ✅ **Token economy panel** — per-node prompt/completion + run total + heaviest-node
   hint (exact when the model reports usage, else a flagged estimate).
 - Copilot auto-path (`vscode.lm`) and a security sandbox for untrusted graphs are
-  on the backlog (`workflow/stages/graphloupe/backlog.html`).
+  on the backlog.
 
 ![Step debugging flow](docs/img/debug-flow.svg)
 

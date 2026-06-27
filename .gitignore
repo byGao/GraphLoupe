@@ -220,3 +220,6 @@ __marimo__/
 # Node / TypeScript (GraphLoupe extension + webview)
 node_modules/
 docs/img/.rendered/
+
+# agent working-discipline notes — kept local, not part of the public repo
+CLAUDE.md
