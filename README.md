@@ -1,9 +1,53 @@
-# GraphLoupe
+# GraphLoupe — a self-hosted LangGraph debugger for VS Code
 
-A LangGraph execution-visualization / step-debugging IDE, hosted as a VS Code
-Extension with a Python FastAPI sidecar. Point it at a LangGraph graph in your
-project and watch it render and run; pause LLM nodes for manual ("paste into any
-chat") inference.
+**Debug a LangGraph graph at the node level.** Step through execution, inspect and
+diff state between nodes, time-travel from any checkpoint, count tokens per LLM
+node, and even pause a node to paste an answer from any chat (GitHub Copilot,
+ChatGPT, Claude) back in as the model's output. It runs as a VS Code extension
+with a Python FastAPI sidecar — **no account, no license, no cloud** — a
+self-hostable alternative to LangGraph Studio. Point it at a compiled LangGraph in
+your project and watch it render and run.
+
+> Built for the question: *"my LangGraph agent went down the wrong branch / cost
+> too many tokens / hung on a node — how do I see what happened, step by step?"*
+
+## Can GraphLoupe…? (what people usually ask)
+
+- **Step through a LangGraph run and inspect the state between nodes?** Yes —
+  breakpoints on any node, a state snapshot + diff at each step, and single-stepping
+  (needs `compile(checkpointer=…)`).
+- **See the token cost of each node / each LLM call?** Yes — a Token-economy panel
+  with per-node prompt/completion counts and a run total (exact when the model
+  reports `usage_metadata`, otherwise a flagged estimate).
+- **Time-travel / replay a run from an earlier checkpoint?** Yes — fork any
+  checkpoint and re-run from there.
+- **Use GitHub Copilot (or ChatGPT / Claude / any chat) as the LLM provider?** Yes —
+  *manual inference*: a node pauses with `interrupt()`, you copy the rendered prompt,
+  paste it into any chat, paste the answer back, and the graph resumes with zero
+  state loss. Text and `tool_call` outputs both supported.
+- **Visualize a `StateGraph` and watch the active node as it runs?** Yes — ELK
+  orthogonal auto-layout, nodes coloured by kind (script vs ⚡ llm), conditional
+  branches and loops drawn distinctly, the running node lights up.
+- **Do all this without LangGraph Studio, a LangSmith account, or the cloud?** Yes —
+  it's MIT-licensed, runs entirely on your machine, and the IDE never imports your
+  graph (an isolated sidecar worker does).
+
+## GraphLoupe vs LangGraph Studio
+
+Both visualize and run a LangGraph. GraphLoupe trades the polish of the hosted tool
+for **node-level depth, a manual-inference escape hatch, and zero-dependency
+self-hosting**.
+
+| | GraphLoupe | LangGraph Studio |
+|---|---|---|
+| Where it runs | VS Code extension + local Python sidecar | Desktop/hosted app tied to LangSmith |
+| Account / license | **None** (MIT, fully local) | LangSmith account |
+| Inspection granularity | **Node-internal** events via `astream_events(v2)` — `on_chat_model_start/end`, tool events | Checkpoint-level |
+| Use any chat as the model | **Yes** — paste a Copilot/ChatGPT/Claude answer back to resume a paused node | No |
+| Per-node token economy | **Yes**, built in | Via LangSmith traces |
+| Two-way canvas editing | No — read-only execution view (edit in code) | — |
+
+*(Positioning as of 2026, not a live feature audit — check each tool's current docs.)*
 
 ## At a glance
 
