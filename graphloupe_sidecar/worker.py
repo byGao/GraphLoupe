@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import asyncio
 import importlib
+import inspect
 import json
 import sys
 import threading
@@ -48,6 +49,18 @@ def _load(entry: str) -> Any:
 def _emit(line: str) -> None:
     sys.stdout.write(line + "\n")
     sys.stdout.flush()
+
+
+def _node_docs(drawable: Any) -> dict[str, str | None]:
+    """First docstring line per node (the node's purpose) for the overview table.
+    Reliable across graphs (unlike source-based LLM detection); missing -> None."""
+    docs: dict[str, str | None] = {}
+    for name, node in getattr(drawable, "nodes", {}).items():
+        data = getattr(node, "data", None)
+        fn = getattr(data, "func", None) or getattr(data, "bound", None) or data
+        doc = inspect.getdoc(fn) if callable(fn) else None
+        docs[name] = doc.splitlines()[0] if doc else None
+    return docs
 
 
 def _interrupt_from_state(state: Any) -> tuple[str, str, dict[str, Any]] | None:
@@ -390,6 +403,7 @@ def main() -> None:
             edges=sorted((e.source, e.target) for e in g.edges),
             inputSchema=input_schema,
             projectRoot=args.project_root or None,
+            nodeDocs=_node_docs(g),
         ).model_dump_json())
     except Exception as exc:  # import error / missing attr / build raises
         _emit(P.ErrorEvent(code="graph_load_failed",

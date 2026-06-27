@@ -1,6 +1,6 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { buildInput, defaultForm, formFields, initialState, needsGraphSelection, reduce, tokenSummary, type CanvasState } from "./model";
+import { buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, tokenSummary, topoOrder, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
@@ -16,7 +16,7 @@ describe("canvas reducer", () => {
     let s: CanvasState = {
       nodes: ["llm"], edges: [], active: null, running: true, error: null,
       pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
-      projectRoot: null, tokens: {}, llmPending: {},
+      projectRoot: null, tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {},
     };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
@@ -148,6 +148,43 @@ describe("canvas reducer", () => {
     const s = reduce({ ...initialState, running: true },
       ev({ type: "llm_end", llmEventId: "ghost", tokens: { prompt: 0, completion: 9, source: "sidecar_estimate" }, finishReason: null }));
     expect(tokenSummary(s).rows).toEqual([]);
+  });
+
+  it("graph event stores nodeDocs and resets learned kinds", () => {
+    let s = reduce(initialState, ev({ type: "llm_start", threadId: "t", runId: "t", node: "old",
+      llmEventId: "x", model: "m", promptTokens: { prompt: 1, completion: null, source: "sidecar_estimate" } }));
+    expect(nodeKind(s, "old")).toBe("llm");
+    s = reduce(s, ev({ type: "graph", nodes: ["a", "b"], edges: [["a", "b"]],
+      nodeDocs: { a: "do A", b: null } }));
+    expect(s.nodeDocs).toEqual({ a: "do A", b: null });
+    expect(nodeKind(s, "old")).toBe("script");  // kinds reset on new graph
+  });
+
+  it("node kind: llm once a chat-model call or manual interrupt is observed; persists across runs", () => {
+    let s = reduce(initialState, ev({ type: "graph", nodes: ["scan", "summarize", "ask"], edges: [] }));
+    expect(nodeKind(s, "summarize")).toBe("script");
+    s = reduce(s, ev({ type: "llm_start", threadId: "t", runId: "t", node: "summarize",
+      llmEventId: "a", model: "m", promptTokens: { prompt: 5, completion: null, source: "sidecar_estimate" } }));
+    s = reduce(s, ev({ type: "manual_inference_required", node: "ask", threadId: "t", interruptId: "i",
+      renderedText: "?", expects: "text", promptTokens: { prompt: 1, completion: null, source: "sidecar_estimate" }, toolSchema: null, messages: [] }));
+    expect(nodeKind(s, "summarize")).toBe("llm");
+    expect(nodeKind(s, "ask")).toBe("llm");
+    s = reduce(s, ev({ type: "run_started" }));   // a new run must NOT forget learned kinds
+    expect(nodeKind(s, "summarize")).toBe("llm");
+    expect(nodeKind(s, "scan")).toBe("script");
+  });
+
+  it("topoOrder is BFS from __start__; overviewRows drops synthetics and carries kind+doc", () => {
+    const nodes = ["__start__", "a", "b", "__end__"];
+    const edges: [string, string][] = [["__start__", "a"], ["a", "b"], ["b", "__end__"]];
+    expect(topoOrder(nodes, edges)).toEqual(["__start__", "a", "b", "__end__"]);
+    let s = reduce(initialState, ev({ type: "graph", nodes, edges, nodeDocs: { a: "do A", b: "do B" } }));
+    s = reduce(s, ev({ type: "llm_start", threadId: "t", runId: "t", node: "b",
+      llmEventId: "z", model: "m", promptTokens: { prompt: 1, completion: null, source: "sidecar_estimate" } }));
+    expect(overviewRows(s)).toEqual([
+      { node: "a", kind: "script", doc: "do A" },
+      { node: "b", kind: "llm", doc: "do B" },
+    ]);
   });
 
   it("needsGraphSelection: true with no graph, false once a graph loads", () => {

@@ -64,6 +64,7 @@ export const GraphTopology = z.object({
   edges: z.array(z.tuple([z.string(), z.string()])),
   inputSchema: z.record(z.any()).nullable(),
   projectRoot: z.string().nullable().default(null),
+  nodeDocs: z.record(z.string().nullable()).nullable().default(null),
 });
 export const RunStarted = z.object({
   ...env, type: z.literal("run_started"),

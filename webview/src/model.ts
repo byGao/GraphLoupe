@@ -38,13 +38,53 @@ export interface CanvasState {
   projectRoot: string | null;     // project root the graph loaded from, for form defaults
   tokens: Record<string, NodeTokens>;  // per-node token tally for the current run (PHASE 4)
   llmPending: Record<string, PendingLlm>;  // in-flight llm calls by llmEventId (start -> end)
+  nodeDocs: Record<string, string | null>;  // first docstring line per node (overview)
+  nodeKinds: Record<string, "llm">;  // nodes observed to do inference (llm_start / manual); absent = script
 }
+
+export type NodeKind = "llm" | "script";
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
   paused: null, snapshot: null, checkpoints: [], inputSchema: null, projectRoot: null,
-  tokens: {}, llmPending: {},
+  tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {},
 };
+
+/** A node is "llm/inference" once observed emitting an LLM call or a manual interrupt
+ *  (runtime truth — static source detection proved unreliable); otherwise "script". */
+export function nodeKind(state: CanvasState, node: string): NodeKind {
+  return state.nodeKinds[node] ?? "script";
+}
+
+/** BFS order from __start__ (falls back to input order for unreached nodes), shared by
+ *  the canvas layout and the overview table so both read top-to-bottom in flow order. */
+export function topoOrder(nodes: string[], edges: [string, string][]): string[] {
+  const adj: Record<string, string[]> = {};
+  nodes.forEach((n) => (adj[n] = []));
+  edges.forEach(([s, t]) => adj[s]?.push(t));
+  const start = nodes.includes("__start__") ? "__start__" : nodes[0];
+  const seen = new Set<string>();
+  const order: string[] = [];
+  const queue = start ? [start] : [];
+  while (queue.length) {
+    const n = queue.shift() as string;
+    if (seen.has(n)) continue;
+    seen.add(n);
+    order.push(n);
+    for (const m of adj[n] ?? []) if (!seen.has(m)) queue.push(m);
+  }
+  nodes.forEach((n) => { if (!seen.has(n)) order.push(n); });
+  return order;
+}
+
+export interface OverviewRow { node: string; kind: NodeKind; doc: string | null }
+
+/** Rows for the sidebar overview: real nodes (no __start__/__end__) in flow order. */
+export function overviewRows(state: CanvasState): OverviewRow[] {
+  return topoOrder(state.nodes, state.edges)
+    .filter((n) => n !== "__start__" && n !== "__end__")
+    .map((n) => ({ node: n, kind: nodeKind(state, n), doc: state.nodeDocs[n] ?? null }));
+}
 
 export interface FormField {
   name: string; type: string; isPath: boolean;
@@ -147,15 +187,19 @@ export function tokenSummary(state: CanvasState): TokenSummary {
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
     case "graph":
+      // new graph load -> reset learned kinds (they belong to the previous graph)
       return { ...state, nodes: ev.nodes, edges: ev.edges, error: null,
-        inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null };
+        inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null,
+        nodeDocs: ev.nodeDocs ?? {}, nodeKinds: {} };
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null,
         tokens: {}, llmPending: {} };
     case "llm_start":
-      // buffer the call; its prompt is finalized at llm_end (exact if api_usage arrives)
-      return { ...state, llmPending: { ...state.llmPending,
-        [ev.llmEventId]: { node: ev.node, prompt: ev.promptTokens?.prompt ?? 0 } } };
+      // buffer the call; its prompt is finalized at llm_end (exact if api_usage arrives).
+      // observing a chat-model call marks this node as inference (persists across runs).
+      return { ...state, nodeKinds: { ...state.nodeKinds, [ev.node]: "llm" },
+        llmPending: { ...state.llmPending,
+          [ev.llmEventId]: { node: ev.node, prompt: ev.promptTokens?.prompt ?? 0 } } };
     case "llm_end": {
       const p = state.llmPending[ev.llmEventId];
       if (!p) return state;  // end without a matching start: ignore
@@ -190,6 +234,7 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
     case "manual_inference_required":
       return {
         ...state,
+        nodeKinds: { ...state.nodeKinds, [ev.node]: "llm" },  // manual interrupt = inference node
         pending: {
           node: ev.node, threadId: ev.threadId ?? null, interruptId: ev.interruptId,
           renderedText: ev.renderedText, expects: ev.expects,

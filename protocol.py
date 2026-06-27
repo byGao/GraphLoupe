@@ -98,6 +98,9 @@ class GraphTopology(Envelope):
     # Absolute project root the graph was loaded from, so the form can pre-fill
     # path-like inputs (repo_path -> root, out_dir -> root/out). Added ui-design-pass.
     projectRoot: str | None = None
+    # First docstring line per node (the node's purpose) for the overview table;
+    # None per node if it has no docstring. Added graph-overview-lanes.
+    nodeDocs: dict[str, str | None] | None = None
 
 
 class RunStarted(Envelope):

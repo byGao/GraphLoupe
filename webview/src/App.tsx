@@ -1,8 +1,9 @@
-import { useEffect, useMemo, useState, type CSSProperties } from "react";
-import { ReactFlow, Background, Controls, Position, type Node, type Edge } from "@xyflow/react";
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { ReactFlow, Background, Controls, Position, type Node, type Edge, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  buildInput, defaultForm, formFields, initialState, needsGraphSelection, reduce, tokenSummary,
+  buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind,
+  overviewRows, reduce, tokenSummary,
   type CanvasState, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import type { ServerEvent } from "../../protocol";
@@ -180,8 +181,17 @@ function TokenPanel({ state }: { state: CanvasState }) {
   );
 }
 
-/** Layered left-to-right layout by BFS depth from __start__ (so start -> ... -> end, no crossings). */
-function layout(nodes: string[], edges: [string, string][]): Record<string, { x: number; y: number }> {
+const NODE_W = 184;
+const ROW_H = 124;
+const LANE_X: Record<"script" | "llm", number> = { script: 40, llm: 360 };
+
+/** Two-lane top-to-bottom layout: y by BFS depth from __start__, x by node kind
+ *  (script left / llm right). A linear pipeline alternates lanes -> left/right zigzag.
+ *  __start__/__end__ sit in the script lane. Collisions at the same (depth,lane) are
+ *  nudged right. Edges are rendered orthogonally (type:"step"), so no diagonals. */
+function layout(
+  nodes: string[], edges: [string, string][], kindOf: (n: string) => "llm" | "script",
+): Record<string, { x: number; y: number }> {
   const adj: Record<string, string[]> = {};
   nodes.forEach((n) => (adj[n] = []));
   edges.forEach(([s, t]) => adj[s]?.push(t));
@@ -199,18 +209,49 @@ function layout(nodes: string[], edges: [string, string][]): Record<string, { x:
     }
   }
   let maxDepth = Math.max(0, ...Object.values(depth));
-  nodes.forEach((n) => {
-    if (depth[n] === undefined) depth[n] = ++maxDepth;
-  });
-  const perDepth: Record<number, number> = {};
+  nodes.forEach((n) => { if (depth[n] === undefined) depth[n] = ++maxDepth; });
+  const perCell: Record<string, number> = {};
   const pos: Record<string, { x: number; y: number }> = {};
   nodes.forEach((n) => {
+    const lane = n === "__start__" || n === "__end__" ? "script" : kindOf(n);
     const d = depth[n];
-    const row = perDepth[d] ?? 0;
-    perDepth[d] = row + 1;
-    pos[n] = { x: d * 210, y: 70 + row * 110 };
+    const key = `${d}:${lane}`;
+    const col = perCell[key] ?? 0;
+    perCell[key] = col + 1;
+    pos[n] = { x: LANE_X[lane] + col * (NODE_W + 28), y: 30 + d * ROW_H };
   });
   return pos;
+}
+
+/** Sidebar overview: graph title + node count + per-node {kind, name, purpose};
+ *  clicking a row centers + highlights that node on the canvas (R-04). */
+function OverviewPanel(
+  { state, focused, onPick }: { state: CanvasState; focused: string | null; onPick: (id: string) => void },
+) {
+  const rows = useMemo(() => overviewRows(state), [state]);
+  const title = (state.projectRoot?.replace(/[\\/]+$/, "").split(/[\\/]/).pop()) || "Graph";
+  return (
+    <div style={{ width: 232, flex: "0 0 232px", borderRight: "1px solid var(--line)", background: "var(--surface)", overflow: "auto", padding: "10px 12px" }}>
+      <div style={{ color: "var(--pause)", fontWeight: 600, marginBottom: 2 }}>⌑ {title}</div>
+      <div className="gl-help" style={{ marginBottom: 8 }}>{rows.length} nodes · {state.edges.length} edges</div>
+      {rows.map((r) => (
+        <div
+          key={r.node}
+          onClick={() => onPick(r.node)}
+          style={{
+            padding: "5px 7px", borderRadius: 6, cursor: "pointer", marginBottom: 2,
+            background: r.node === focused ? "rgba(108,182,255,0.14)" : "transparent",
+            borderLeft: `2px solid ${r.kind === "llm" ? "var(--accent)" : "var(--line)"}`,
+          }}
+        >
+          <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text)" }}>
+            {r.kind === "llm" ? "⚡ " : ""}{r.node}
+          </div>
+          {r.doc && <div className="gl-help" style={{ marginTop: 1 }}>{r.doc}</div>}
+        </div>
+      ))}
+    </div>
+  );
 }
 
 export default function App() {
@@ -219,6 +260,20 @@ export default function App() {
   const [form, setForm] = useState<Record<string, string>>({});
   const [showRaw, setShowRaw] = useState(false);
   const [breakpoints, setBreakpoints] = useState<Set<string>>(new Set());
+  const [showOverview, setShowOverview] = useState(true);
+  const [focused, setFocused] = useState<string | null>(null);
+  const rf = useRef<ReactFlowInstance | null>(null);
+
+  const positions = useMemo(
+    () => layout(state.nodes, state.edges, (n) => nodeKind(state, n)),
+    [state.nodes, state.edges, state.nodeKinds],
+  );
+
+  const focusNode = (id: string) => {
+    const p = positions[id];
+    if (p && rf.current) rf.current.setCenter(p.x + NODE_W / 2, p.y + 26, { zoom: 1.3, duration: 400 });
+    setFocused(id);
+  };
 
   const toggleBreakpoint = (node: string) => {
     setBreakpoints((bps) => {
@@ -252,25 +307,42 @@ export default function App() {
   }, []);
 
   const nodes: Node[] = useMemo(() => {
-    const pos = layout(state.nodes, state.edges);
-    return state.nodes.map((id) => ({
-      id,
-      position: pos[id],
-      data: { label: id },
-      sourcePosition: Position.Right,
-      targetPosition: Position.Left,
-      style: {
-        fontFamily: "var(--mono)",
-        ...(id === state.active
-          ? { border: "2px solid var(--run)", background: "rgba(76,195,138,0.14)", color: "var(--run)" }
-          : { border: "1px solid var(--line)" }),
-        ...(breakpoints.has(id) ? { boxShadow: "0 0 0 2px var(--danger)" } : {}),
-      },
-    }));
-  }, [state.nodes, state.edges, state.active, breakpoints]);
+    return state.nodes.map((id) => {
+      const kind = nodeKind(state, id);
+      const doc = state.nodeDocs[id];
+      const synthetic = id === "__start__" || id === "__end__";
+      return {
+        id,
+        position: positions[id],
+        data: {
+          label: (
+            <div style={{ textAlign: "left" }}>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: id === state.active ? "var(--run)" : "var(--text)" }}>
+                {kind === "llm" ? "⚡ " : ""}{id}
+              </div>
+              {doc && (
+                <div style={{ fontFamily: "var(--sans)", fontSize: 10, color: "var(--muted)", marginTop: 3, whiteSpace: "normal", lineHeight: 1.35 }}>
+                  {doc}
+                </div>
+              )}
+            </div>
+          ),
+        },
+        sourcePosition: Position.Bottom,
+        targetPosition: Position.Top,
+        style: {
+          width: NODE_W, textAlign: "left", padding: synthetic ? "4px 10px" : "7px 10px",
+          borderColor: kind === "llm" ? "var(--accent)" : "var(--line)",
+          ...(id === state.active ? { border: "2px solid var(--run)", background: "rgba(76,195,138,0.14)" } : {}),
+          ...(id === focused ? { boxShadow: "0 0 0 2px var(--node)" } : {}),
+          ...(breakpoints.has(id) ? { boxShadow: "0 0 0 2px var(--danger)" } : {}),
+        },
+      };
+    });
+  }, [state.nodes, state.nodeDocs, state.nodeKinds, state.active, positions, focused, breakpoints]);
 
   const edges: Edge[] = useMemo(
-    () => state.edges.map(([s, t], i) => ({ id: `e${i}`, source: s, target: t })),
+    () => state.edges.map(([s, t], i) => ({ id: `e${i}`, source: s, target: t, type: "step" })),
     [state.edges],
   );
 
@@ -291,8 +363,11 @@ export default function App() {
           <span style={{ color: "#8b949e", fontSize: 12 }}>
             read-only{state.running ? " · running" : ""}
           </span>
+          <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => setShowOverview((o) => !o)}>
+            ⌑ Overview
+          </button>
           {state.inputSchema && (
-            <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => setShowRaw((r) => !r)}>
+            <button style={{ fontSize: 12 }} onClick={() => setShowRaw((r) => !r)}>
               {showRaw ? "Form" : "JSON"}
             </button>
           )}
@@ -336,8 +411,16 @@ export default function App() {
           ⚠ {state.error}
         </div>
       )}
-      <div style={{ flex: 1, position: "relative" }}>
-        <ReactFlow nodes={nodes} edges={edges} fitView onNodeClick={(_, n) => toggleBreakpoint(n.id)}>
+      <div style={{ flex: 1, position: "relative", display: "flex" }}>
+        {showOverview && state.nodes.length > 0 && (
+          <OverviewPanel state={state} focused={focused} onPick={focusNode} />
+        )}
+        <div style={{ flex: 1, position: "relative" }}>
+        <ReactFlow
+          nodes={nodes} edges={edges} fitView
+          onInit={(inst) => { rf.current = inst; }}
+          onNodeClick={(_, n) => toggleBreakpoint(n.id)}
+        >
           <Background />
           <Controls />
         </ReactFlow>
@@ -363,6 +446,7 @@ export default function App() {
             </div>
           </div>
         )}
+        </div>
       </div>
       <TokenPanel state={state} />
       {state.pending && <ManualPanel pending={state.pending} />}
