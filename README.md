@@ -28,6 +28,11 @@ dashed + labelled, and loops route on the left with a ↺.
 Open `graphloupe_sidecar.graph:showcase_graph` to see all of it at once
 (see [Quick start](#quick-start-the-feature-showcase)).
 
+Its control flow (the active node lights up as it runs — **open this SVG in a
+browser to watch it loop**; GitHub shows the first frame):
+
+![showcase execution replay](docs/img/run-replay.svg)
+
 ## Layout
 
 | Path | What |
