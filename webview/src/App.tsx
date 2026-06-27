@@ -351,15 +351,24 @@ export default function App() {
     return real;
   }, [state.nodes, state.nodeDocs, state.nodeKinds, state.active, positions, focused, breakpoints]);
 
-  const edges: Edge[] = useMemo(
-    () => state.edges.map(([s, t], i) => {
+  const edges: Edge[] = useMemo(() => {
+    // convention: forward edges flow downward (ELK orthogonal route); a back edge
+    // (target laid out above source) is a loop -> route it out the LEFT side of the
+    // source to the LEFT side of the target, so it never sits on the forward edge.
+    let loopRank = 0;
+    return state.edges.map(([s, t], i) => {
       const key = `${s}->${t}`;
       const rawLabel = state.edgeLabels[key];
-      const points = layout.routes[key];
-      // a back edge (loop) points to a node laid out above its source; ELK already
-      // routes it apart, we just colour it amber + ↺ so it reads as a return path.
       const sp = positions[s], tp = positions[t];
       const isLoop = !!sp && !!tp && tp.y < sp.y - 1;
+      let points = layout.routes[key];
+      if (isLoop && sp && tp) {
+        const sMidY = sp.y + nodeSize(state, s).h / 2;
+        const tMidY = tp.y + nodeSize(state, t).h / 2;
+        const bowX = Math.min(sp.x, tp.x) - 36 - loopRank * 18;
+        loopRank += 1;
+        points = [{ x: sp.x, y: sMidY }, { x: bowX, y: sMidY }, { x: bowX, y: tMidY }, { x: tp.x, y: tMidY }];
+      }
       const color = isLoop ? "#e3b341" : "#6b7785";
       const label = isLoop ? `↺ ${rawLabel ?? "loop"}` : rawLabel;
       return {
@@ -369,9 +378,8 @@ export default function App() {
         style: { stroke: color, strokeWidth: isLoop ? 2 : 1.6, strokeDasharray: rawLabel ? "6 3" : undefined },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
       };
-    }),
-    [state.edges, state.edgeLabels, layout.routes, positions],
-  );
+    });
+  }, [state.edges, state.edgeLabels, layout.routes, positions]);
 
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
