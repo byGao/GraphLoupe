@@ -5,6 +5,10 @@
   "version": "0.1.0",
   "publisher": "byGao",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/byGao/GraphLoupe.git"
+  },
   "engines": {
     "vscode": "^1.90.0"
   },

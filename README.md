@@ -6,6 +6,28 @@ project and watch it render and run; pause LLM nodes for manual ("paste into any
 chat") inference. Design docs live in the monorepo at `workflow/stages/graphloupe/`;
 this repo holds the code + this guide.
 
+## At a glance
+
+![GraphLoupe architecture](docs/img/architecture.svg)
+
+The IDE never imports your graph. A FastAPI sidecar spawns an **isolated worker**
+that imports and runs it; events stream back over a frozen `protocol` contract.
+
+![Reading the canvas](docs/img/canvas-legend.svg)
+
+The canvas is auto-laid out (ELK, orthogonal): nodes are coloured by kind
+(script vs ⚡ llm/inference), forward edges flow down, conditional branches are
+dashed + labelled, and loops route on the left with a ↺.
+
+### The showcase graph, running
+
+| Canvas (showcase: branch + loop + manual + llm) | Token economy after a run |
+|---|---|
+| ![showcase canvas](docs/img/showcase-canvas.png) | ![token economy panel](docs/img/token-economy.png) |
+
+Open `graphloupe_sidecar.graph:showcase_graph` to see all of it at once
+(see [Quick start](#quick-start-the-feature-showcase)).
+
 ## Layout
 
 | Path | What |
