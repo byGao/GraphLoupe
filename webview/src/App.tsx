@@ -312,16 +312,24 @@ export default function App() {
 
   const edges: Edge[] = useMemo(
     () => state.edges.map(([s, t], i) => {
-      const label = state.edgeLabels[`${s}->${t}`];
+      const rawLabel = state.edgeLabels[`${s}->${t}`];
+      // a back edge (loop) points to a node laid out above its source; render it as
+      // an amber bezier that bows out + a ↺ marker, so it's clearly distinct from
+      // the gray forward edges instead of overlapping them.
+      const sp = positions[s], tp = positions[t];
+      const isLoop = !!sp && !!tp && tp.y < sp.y - 1;
+      const color = isLoop ? "#e3b341" : "#6b7785";
+      const label = isLoop ? `↺ ${rawLabel ?? "loop"}` : rawLabel;
       return {
-        id: `e${i}`, source: s, target: t, type: "smoothstep", label,
-        labelStyle: { fill: "var(--pause)", fontFamily: "var(--mono)", fontSize: 10 },
+        id: `e${i}`, source: s, target: t, type: isLoop ? "default" : "smoothstep", label,
+        zIndex: isLoop ? 20 : 0,
+        labelStyle: { fill: isLoop ? "#e3b341" : "var(--pause)", fontFamily: "var(--mono)", fontSize: 10 },
         labelBgStyle: { fill: "var(--surface-2)" }, labelBgPadding: [4, 2] as [number, number],
-        style: { stroke: "#6b7785", strokeWidth: 1.6, strokeDasharray: label ? "5 3" : undefined },
-        markerEnd: { type: MarkerType.ArrowClosed, color: "#6b7785", width: 18, height: 18 },
+        style: { stroke: color, strokeWidth: isLoop ? 2 : 1.6, strokeDasharray: rawLabel && !isLoop ? "5 3" : undefined },
+        markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
       };
     }),
-    [state.edges, state.edgeLabels],
+    [state.edges, state.edgeLabels, positions],
   );
 
   return (
@@ -410,7 +418,8 @@ export default function App() {
           }}>
             <span><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--line)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />script</span>
             <span style={{ color: "var(--accent)" }}><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--accent)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />⚡ llm / inference</span>
-            <span style={{ color: "var(--pause)" }}>— — branch (label)</span>
+            <span style={{ color: "var(--pause)" }}>— — branch</span>
+            <span style={{ color: "#e3b341" }}>↺ loop</span>
           </div>
         )}
         {needsGraphSelection(state) && !state.pending && (
