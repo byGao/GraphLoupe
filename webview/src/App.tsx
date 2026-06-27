@@ -1,12 +1,15 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ReactFlow, Background, Controls, MarkerType, Position, type Node, type Edge, type ReactFlowInstance } from "@xyflow/react";
+import {
+  ReactFlow, BaseEdge, Background, Controls, MarkerType, Position,
+  type Node, type Edge, type EdgeProps, type EdgeTypes, type ReactFlowInstance,
+} from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
   buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind,
   overviewRows, reduce, tokenSummary,
   type CanvasState, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
-import { dagreLayout } from "./layout";
+import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
@@ -183,11 +186,37 @@ function TokenPanel({ state }: { state: CanvasState }) {
 }
 
 const NODE_W = 190;
-/** Box dagre reserves per node: taller when it carries a purpose line. */
+/** Box ELK reserves per node: taller when it carries a purpose line. */
 function nodeSize(state: CanvasState, id: string): { w: number; h: number } {
   const synthetic = id === "__start__" || id === "__end__";
   return { w: NODE_W, h: synthetic ? 40 : state.nodeDocs[id] ? 78 : 48 };
 }
+
+/** Draws ELK's exact orthogonal route (data.points) so edges never overlap or cut
+ *  through a node. Label sits at the route's midpoint with a halo for legibility. */
+function OrthEdge({ data, markerEnd, style, label }: EdgeProps) {
+  const points = (data as { points?: Pt[] } | undefined)?.points ?? [];
+  if (points.length < 2) return null;
+  const d = points.map((p, i) => `${i ? "L" : "M"}${p.x},${p.y}`).join(" ");
+  const mid = points[Math.floor((points.length - 1) / 2)];
+  return (
+    <>
+      <BaseEdge path={d} markerEnd={markerEnd} style={style} />
+      {label && (
+        <text
+          x={mid.x} y={mid.y - 4} textAnchor="middle"
+          fontFamily="var(--mono)" fontSize={10}
+          fill={(style?.stroke as string) === "#e3b341" ? "#e3b341" : "var(--pause)"}
+          style={{ stroke: "var(--surface-2)", strokeWidth: 3, paintOrder: "stroke" }}
+        >
+          {label as string}
+        </text>
+      )}
+    </>
+  );
+}
+
+const edgeTypes: EdgeTypes = { orth: OrthEdge };
 
 /** Sidebar overview: graph title + node count + per-node {kind, name, purpose};
  *  clicking a row centers + highlights that node on the canvas (R-04). */
@@ -232,10 +261,22 @@ export default function App() {
   const [focused, setFocused] = useState<string | null>(null);
   const rf = useRef<ReactFlowInstance | null>(null);
 
-  const positions = useMemo(
-    () => dagreLayout(state.nodes, state.edges, (n) => nodeSize(state, n)),
+  // ELK runs its solver async; only re-layout when the topology (not the run
+  // highlight) changes. Keyed on nodes+edges+docs so a run doesn't reflow.
+  const [layout, setLayout] = useState<GraphLayout>({ pos: {}, routes: {} });
+  const topoKey = useMemo(
+    () => JSON.stringify([state.nodes, state.edges, state.nodeDocs]),
     [state.nodes, state.edges, state.nodeDocs],
   );
+  useEffect(() => {
+    let live = true;
+    elkLayout(state.nodes, state.edges, (n) => nodeSize(state, n))
+      .then((gl) => { if (live) setLayout(gl); })
+      .catch((err) => console.error("[graphloupe] layout", err));
+    return () => { live = false; };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [topoKey]);
+  const positions = layout.pos;
 
   const focusNode = (id: string) => {
     const p = positions[id];
@@ -275,7 +316,7 @@ export default function App() {
   }, []);
 
   const nodes: Node[] = useMemo(() => {
-    const real: Node[] = state.nodes.map((id) => {
+    const real: Node[] = state.nodes.filter((id) => positions[id]).map((id) => {
       const kind = nodeKind(state, id);
       const doc = state.nodeDocs[id];
       const synthetic = id === "__start__" || id === "__end__";
@@ -312,24 +353,24 @@ export default function App() {
 
   const edges: Edge[] = useMemo(
     () => state.edges.map(([s, t], i) => {
-      const rawLabel = state.edgeLabels[`${s}->${t}`];
-      // a back edge (loop) points to a node laid out above its source; render it as
-      // an amber bezier that bows out + a ↺ marker, so it's clearly distinct from
-      // the gray forward edges instead of overlapping them.
+      const key = `${s}->${t}`;
+      const rawLabel = state.edgeLabels[key];
+      const points = layout.routes[key];
+      // a back edge (loop) points to a node laid out above its source; ELK already
+      // routes it apart, we just colour it amber + ↺ so it reads as a return path.
       const sp = positions[s], tp = positions[t];
       const isLoop = !!sp && !!tp && tp.y < sp.y - 1;
       const color = isLoop ? "#e3b341" : "#6b7785";
       const label = isLoop ? `↺ ${rawLabel ?? "loop"}` : rawLabel;
       return {
-        id: `e${i}`, source: s, target: t, type: isLoop ? "default" : "smoothstep", label,
-        zIndex: isLoop ? 20 : 0,
-        labelStyle: { fill: isLoop ? "#e3b341" : "var(--pause)", fontFamily: "var(--mono)", fontSize: 10 },
-        labelBgStyle: { fill: "var(--surface-2)" }, labelBgPadding: [4, 2] as [number, number],
-        style: { stroke: color, strokeWidth: isLoop ? 2 : 1.6, strokeDasharray: rawLabel && !isLoop ? "5 3" : undefined },
+        id: `e${i}`, source: s, target: t, type: "orth", label,
+        data: { points },
+        zIndex: isLoop ? 20 : 1,
+        style: { stroke: color, strokeWidth: isLoop ? 2 : 1.6, strokeDasharray: rawLabel ? "6 3" : undefined },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
       };
     }),
-    [state.edges, state.edgeLabels, positions],
+    [state.edges, state.edgeLabels, layout.routes, positions],
   );
 
   return (
@@ -403,7 +444,7 @@ export default function App() {
         )}
         <div style={{ flex: 1, position: "relative" }}>
         <ReactFlow
-          nodes={nodes} edges={edges} fitView
+          nodes={nodes} edges={edges} edgeTypes={edgeTypes} fitView
           onInit={(inst) => { rf.current = inst; }}
           onNodeClick={(_, n) => toggleBreakpoint(n.id)}
         >
