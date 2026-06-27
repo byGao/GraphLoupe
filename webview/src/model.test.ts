@@ -160,6 +160,13 @@ describe("canvas reducer", () => {
     expect(nodeKind(s, "old")).toBe("script");  // kinds reset on new graph
   });
 
+  it("graph event seeds lane kinds from the worker's static nodeKinds (visible pre-run)", () => {
+    const s = reduce(initialState, ev({ type: "graph", nodes: ["prepare", "llm"], edges: [["prepare", "llm"]],
+      nodeKinds: { prepare: "script", llm: "llm" } }));
+    expect(nodeKind(s, "llm")).toBe("llm");      // classified before any run
+    expect(nodeKind(s, "prepare")).toBe("script");
+  });
+
   it("node kind: llm once a chat-model call or manual interrupt is observed; persists across runs", () => {
     let s = reduce(initialState, ev({ type: "graph", nodes: ["scan", "summarize", "ask"], edges: [] }));
     expect(nodeKind(s, "summarize")).toBe("script");

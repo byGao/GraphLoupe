@@ -37,5 +37,9 @@
     "prepare": "Seed the conversation state before the model call.",
     "llm": "Invoke the chat model on the running messages.",
     "__end__": null
+  },
+  "nodeKinds": {
+    "prepare": "script",
+    "llm": "llm"
   }
 }

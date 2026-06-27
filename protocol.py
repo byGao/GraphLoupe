@@ -101,6 +101,10 @@ class GraphTopology(Envelope):
     # First docstring line per node (the node's purpose) for the overview table;
     # None per node if it has no docstring. Added graph-overview-lanes.
     nodeDocs: dict[str, str | None] | None = None
+    # Static lane classification per node: "llm" (references a model / calls
+    # interrupt) or "script". Best-effort; the webview refines it from runtime
+    # llm_start / manual_inference_required events. Added graph-overview-lanes.
+    nodeKinds: dict[str, str] | None = None
 
 
 class RunStarted(Envelope):

@@ -186,11 +186,15 @@ export function tokenSummary(state: CanvasState): TokenSummary {
 
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
-    case "graph":
-      // new graph load -> reset learned kinds (they belong to the previous graph)
+    case "graph": {
+      // seed lane kinds from the worker's static classification; runtime
+      // llm_start / manual events refine it. Only "llm" entries are kept (absent = script).
+      const seededKinds: Record<string, "llm"> = {};
+      for (const [n, k] of Object.entries(ev.nodeKinds ?? {})) if (k === "llm") seededKinds[n] = "llm";
       return { ...state, nodes: ev.nodes, edges: ev.edges, error: null,
         inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null,
-        nodeDocs: ev.nodeDocs ?? {}, nodeKinds: {} };
+        nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds };
+    }
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null,
         tokens: {}, llmPending: {} };

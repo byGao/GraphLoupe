@@ -20,17 +20,25 @@ Entry format: "package.module:callable" (callable returns a compiled graph).
 from __future__ import annotations
 
 import argparse
+import ast
 import asyncio
 import importlib
 import inspect
 import json
 import sys
+import textwrap
 import threading
 from typing import Any
 
 from langgraph.types import Command
 
 import protocol as P
+
+try:  # classification reads langchain model types; degrade gracefully if absent
+    from langchain_core.language_models import BaseLanguageModel
+    _MODEL_TYPES: tuple[type, ...] = (BaseLanguageModel,)
+except Exception:  # pragma: no cover - langchain always present in practice
+    _MODEL_TYPES = ()
 
 
 def _add_project_root(root: str) -> None:
@@ -51,16 +59,63 @@ def _emit(line: str) -> None:
     sys.stdout.flush()
 
 
+def _node_fn(node: Any) -> Any:
+    """The user's callable behind a compiled node (async lives in .afunc)."""
+    data = getattr(node, "data", None)
+    return (getattr(data, "afunc", None) or getattr(data, "func", None)
+            or getattr(data, "bound", None) or data)
+
+
 def _node_docs(drawable: Any) -> dict[str, str | None]:
     """First docstring line per node (the node's purpose) for the overview table.
     Reliable across graphs (unlike source-based LLM detection); missing -> None."""
     docs: dict[str, str | None] = {}
     for name, node in getattr(drawable, "nodes", {}).items():
-        data = getattr(node, "data", None)
-        fn = getattr(data, "func", None) or getattr(data, "bound", None) or data
+        fn = _node_fn(node)
         doc = inspect.getdoc(fn) if callable(fn) else None
         docs[name] = doc.splitlines()[0] if doc else None
     return docs
+
+
+def _refs_a_model(fn: Any) -> bool:
+    """True if the node closes over / references a langchain model instance — the
+    reliable LLM signal (models are usually captured in the node's closure)."""
+    objs: list[Any] = []
+    for cell in getattr(fn, "__closure__", None) or ():
+        try:
+            objs.append(cell.cell_contents)
+        except ValueError:  # empty cell
+            pass
+    g = getattr(fn, "__globals__", {})
+    for name in getattr(getattr(fn, "__code__", None), "co_names", ()):
+        if name in g:
+            objs.append(g[name])
+    return any(isinstance(o, _MODEL_TYPES) for o in objs)
+
+
+def _calls_interrupt(fn: Any) -> bool:
+    """True if the node body calls interrupt() (manual inference). AST-based, so it
+    never trips on docstrings/comments the way a source regex would."""
+    try:
+        tree = ast.parse(textwrap.dedent(inspect.getsource(fn)))
+    except (OSError, TypeError, SyntaxError):
+        return False
+    return any(isinstance(n, ast.Call) and getattr(n.func, "id", None) == "interrupt"
+               for n in ast.walk(tree))
+
+
+def _node_kinds(drawable: Any) -> dict[str, str]:
+    """Static best-effort lane classification: a node is "llm" (inference) if it
+    references a model instance or calls interrupt(), else "script". Runtime
+    observation (llm_start / manual_inference_required) refines this in the webview."""
+    kinds: dict[str, str] = {}
+    for name, node in getattr(drawable, "nodes", {}).items():
+        if name in ("__start__", "__end__"):
+            continue
+        fn = _node_fn(node)
+        is_llm = callable(fn) and (_refs_a_model(fn) or _calls_interrupt(fn))
+        kinds[name] = "llm" if is_llm else "script"
+    return kinds
 
 
 def _interrupt_from_state(state: Any) -> tuple[str, str, dict[str, Any]] | None:
@@ -404,6 +459,7 @@ def main() -> None:
             inputSchema=input_schema,
             projectRoot=args.project_root or None,
             nodeDocs=_node_docs(g),
+            nodeKinds=_node_kinds(g),
         ).model_dump_json())
     except Exception as exc:  # import error / missing attr / build raises
         _emit(P.ErrorEvent(code="graph_load_failed",
