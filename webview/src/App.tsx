@@ -223,6 +223,42 @@ function layout(
   return pos;
 }
 
+const LANE_LABEL: Record<"script" | "llm", string> = { script: "⚙ script", llm: "⚡ llm / inference" };
+
+/** Sequence-diagram chrome: a header pill + a vertical lifeline per occupied lane,
+ *  so the canvas reads as "classified columns, nodes arranged beneath". These are
+ *  non-interactive decoration nodes (not connected by edges, behind the real nodes). */
+function laneDecorations(state: CanvasState, positions: Record<string, { x: number; y: number }>): Node[] {
+  const lanes = new Set<"script" | "llm">();
+  state.nodes.forEach((id) =>
+    lanes.add(id === "__start__" || id === "__end__" ? "script" : nodeKind(state, id)));
+  const ys = Object.values(positions).map((p) => p.y);
+  if (ys.length === 0) return [];
+  const maxY = Math.max(...ys);
+  const headerY = -84;
+  const deco: Node[] = [];
+  for (const lane of lanes) {
+    deco.push({
+      id: `__lifeline_${lane}`,
+      position: { x: LANE_X[lane] + NODE_W / 2 - 1, y: headerY + 36 },
+      data: { label: "" }, draggable: false, selectable: false, connectable: false, zIndex: 0,
+      style: { width: 2, height: maxY - headerY + 24, padding: 0, borderRadius: 0, border: "none", background: "var(--line)" },
+    });
+    deco.push({
+      id: `__hdr_${lane}`,
+      position: { x: LANE_X[lane], y: headerY },
+      data: { label: LANE_LABEL[lane] }, draggable: false, selectable: false, connectable: false, zIndex: 1,
+      style: {
+        width: NODE_W, textAlign: "center", fontFamily: "var(--mono)", fontWeight: 600, fontSize: 11.5,
+        letterSpacing: 0.5, padding: "5px 8px", borderRadius: 7, background: "var(--surface-2)",
+        color: lane === "llm" ? "var(--accent)" : "var(--muted)",
+        border: `1px solid ${lane === "llm" ? "var(--accent)" : "var(--line)"}`,
+      },
+    });
+  }
+  return deco;
+}
+
 /** Sidebar overview: graph title + node count + per-node {kind, name, purpose};
  *  clicking a row centers + highlights that node on the canvas (R-04). */
 function OverviewPanel(
@@ -231,23 +267,25 @@ function OverviewPanel(
   const rows = useMemo(() => overviewRows(state), [state]);
   const title = (state.projectRoot?.replace(/[\\/]+$/, "").split(/[\\/]/).pop()) || "Graph";
   return (
-    <div style={{ width: 232, flex: "0 0 232px", borderRight: "1px solid var(--line)", background: "var(--surface)", overflow: "auto", padding: "10px 12px" }}>
-      <div style={{ color: "var(--pause)", fontWeight: 600, marginBottom: 2 }}>⌑ {title}</div>
-      <div className="gl-help" style={{ marginBottom: 8 }}>{rows.length} nodes · {state.edges.length} edges</div>
+    <div style={{ width: 244, flex: "0 0 244px", borderRight: "1px solid var(--line)", background: "var(--surface)", overflow: "auto", padding: "12px 14px" }}>
+      <div style={{ color: "var(--pause)", fontWeight: 600, marginBottom: 3, fontSize: 14 }}>⌑ {title}</div>
+      <div style={{ color: "#aeb9c7", fontSize: 11, marginBottom: 12 }}>{rows.length} nodes · {state.edges.length} edges</div>
       {rows.map((r) => (
         <div
           key={r.node}
           onClick={() => onPick(r.node)}
           style={{
-            padding: "5px 7px", borderRadius: 6, cursor: "pointer", marginBottom: 2,
-            background: r.node === focused ? "rgba(108,182,255,0.14)" : "transparent",
-            borderLeft: `2px solid ${r.kind === "llm" ? "var(--accent)" : "var(--line)"}`,
+            padding: "9px 11px", borderRadius: 7, cursor: "pointer", marginBottom: 9,
+            background: r.node === focused ? "rgba(108,182,255,0.16)" : "var(--surface-2)",
+            borderLeft: `3px solid ${r.kind === "llm" ? "var(--accent)" : "var(--line)"}`,
           }}
         >
-          <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: "var(--text)" }}>
+          <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: "#eaf0f7" }}>
             {r.kind === "llm" ? "⚡ " : ""}{r.node}
           </div>
-          {r.doc && <div className="gl-help" style={{ marginTop: 1 }}>{r.doc}</div>}
+          {r.doc && (
+            <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45, color: "#b6c2d0" }}>{r.doc}</div>
+          )}
         </div>
       ))}
     </div>
@@ -307,7 +345,7 @@ export default function App() {
   }, []);
 
   const nodes: Node[] = useMemo(() => {
-    return state.nodes.map((id) => {
+    const real: Node[] = state.nodes.map((id) => {
       const kind = nodeKind(state, id);
       const doc = state.nodeDocs[id];
       const synthetic = id === "__start__" || id === "__end__";
@@ -317,11 +355,11 @@ export default function App() {
         data: {
           label: (
             <div style={{ textAlign: "left" }}>
-              <div style={{ fontFamily: "var(--mono)", fontSize: 12, color: id === state.active ? "var(--run)" : "var(--text)" }}>
+              <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: id === state.active ? "var(--run)" : "#eaf0f7" }}>
                 {kind === "llm" ? "⚡ " : ""}{id}
               </div>
               {doc && (
-                <div style={{ fontFamily: "var(--sans)", fontSize: 10, color: "var(--muted)", marginTop: 3, whiteSpace: "normal", lineHeight: 1.35 }}>
+                <div style={{ fontFamily: "var(--sans)", fontSize: 10.5, color: "#aab6c4", marginTop: 4, whiteSpace: "normal", lineHeight: 1.4 }}>
                   {doc}
                 </div>
               )}
@@ -331,7 +369,7 @@ export default function App() {
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         style: {
-          width: NODE_W, textAlign: "left", padding: synthetic ? "4px 10px" : "7px 10px",
+          width: NODE_W, textAlign: "left", padding: synthetic ? "5px 10px" : "8px 11px",
           borderColor: kind === "llm" ? "var(--accent)" : "var(--line)",
           ...(id === state.active ? { border: "2px solid var(--run)", background: "rgba(76,195,138,0.14)" } : {}),
           ...(id === focused ? { boxShadow: "0 0 0 2px var(--node)" } : {}),
@@ -339,6 +377,7 @@ export default function App() {
         },
       };
     });
+    return [...laneDecorations(state, positions), ...real];
   }, [state.nodes, state.nodeDocs, state.nodeKinds, state.active, positions, focused, breakpoints]);
 
   const edges: Edge[] = useMemo(
