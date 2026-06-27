@@ -98,6 +98,8 @@ blank, the error banner names it (e.g. `run failed: KeyError: 'repo_path'`).
 GraphLoupe reads your graph **as written** — it never guesses. The more of these
 you do, the more it can show. None are required; each unlocks one thing.
 
+![Write this, GraphLoupe shows that](docs/img/authoring.svg)
+
 | To get this in GraphLoupe | Write this in your graph |
 |---|---|
 | **Node purpose** (overview table + the line under each node) | A **docstring** on each node function. GraphLoupe shows its first line. |
@@ -112,6 +114,8 @@ you do, the more it can show. None are required; each unlocks one thing.
 above — read it as the template.
 
 ## Manual inference (the differentiator)
+
+![Manual inference flow](docs/img/manual-inference-flow.svg)
 
 If a node pauses with `interrupt()` (a "ManualChatModel"), GraphLoupe turns the run
 into: **export the prompt → paste it into any chat (Copilot/ChatGPT/…) → paste the
@@ -140,8 +144,12 @@ can fix it.
 
 ## What works today
 
-- ✅ **Graph visualization** — two-lane (script / llm) top-to-bottom layout with
-  arrows + a sidebar overview (node purpose, click to focus); active node highlights.
+![Four capabilities](docs/img/capabilities.svg)
+
+- ✅ **Graph visualization** — ELK orthogonal auto-layout (edges never overlap or cut
+  through nodes), nodes coloured by kind (script vs ⚡ llm), conditional branches
+  labelled, loops routed on the left; sidebar overview (click to focus); active node
+  highlights.
 - ✅ **Step debugging** — breakpoints, state snapshot + diff, step, time-travel fork
   (needs `compile(checkpointer=…)`).
 - ✅ **Manual inference** — interrupt → paste → resume (text + tool_call).
@@ -149,6 +157,8 @@ can fix it.
   hint (exact when the model reports usage, else a flagged estimate).
 - Copilot auto-path (`vscode.lm`) and a security sandbox for untrusted graphs are
   on the backlog (`workflow/stages/graphloupe/backlog.html`).
+
+![Step debugging flow](docs/img/debug-flow.svg)
 
 ## CLI checks (no VS Code needed)
 
