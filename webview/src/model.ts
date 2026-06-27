@@ -40,6 +40,7 @@ export interface CanvasState {
   llmPending: Record<string, PendingLlm>;  // in-flight llm calls by llmEventId (start -> end)
   nodeDocs: Record<string, string | null>;  // first docstring line per node (overview)
   nodeKinds: Record<string, "llm">;  // nodes observed to do inference (llm_start / manual); absent = script
+  edgeLabels: Record<string, string>;  // branch condition per conditional edge, keyed "src->tgt"
 }
 
 export type NodeKind = "llm" | "script";
@@ -47,7 +48,7 @@ export type NodeKind = "llm" | "script";
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
   paused: null, snapshot: null, checkpoints: [], inputSchema: null, projectRoot: null,
-  tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {},
+  tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {},
 };
 
 /** A node is "llm/inference" once observed emitting an LLM call or a manual interrupt
@@ -193,7 +194,7 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
       for (const [n, k] of Object.entries(ev.nodeKinds ?? {})) if (k === "llm") seededKinds[n] = "llm";
       return { ...state, nodes: ev.nodes, edges: ev.edges, error: null,
         inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null,
-        nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds };
+        nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds, edgeLabels: ev.edgeLabels ?? {} };
     }
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null,

@@ -163,12 +163,18 @@ def build_showcase(step_delay: float = 0.0):
         return {"messages": [reply], "steps": state.get("steps", 0) + 1}
 
     def gate(state: State) -> dict[str, Any]:
-        """Confidence gate (script): decide whether a human should review the plan."""
+        """Confidence gate (script): 3-way switch over the plan's confidence."""
         return {}
 
     def route(state: State) -> str:
-        # first pass -> human review; thereafter -> auto (keeps the demo finite)
-        return "review" if state.get("steps", 0) < 3 else "auto"
+        # a 3-way switch that also loops: re-plan once, then a human pass, then exit.
+        # bounded by 'steps' so the demo always terminates.
+        s = state.get("steps", 0)
+        if s < 3:
+            return "redo"    # loop back to plan (re-plan)
+        if s < 4:
+            return "human"   # route to manual review
+        return "auto"        # straight to synthesis
 
     def review(state: State) -> dict[str, Any]:
         """Pause for a human decision on the plan (manual inference via interrupt())."""
@@ -199,7 +205,8 @@ def build_showcase(step_delay: float = 0.0):
     g.add_edge(START, "ingest")
     g.add_edge("ingest", "plan")
     g.add_edge("plan", "gate")
-    g.add_conditional_edges("gate", route, {"review": "review", "auto": "synthesize"})
+    # 3-way switch + a loop: redo -> plan (cycle), human -> review, auto -> synthesize
+    g.add_conditional_edges("gate", route, {"redo": "plan", "human": "review", "auto": "synthesize"})
     g.add_edge("review", "synthesize")
     g.add_edge("synthesize", END)
     return g.compile(checkpointer=MemorySaver())

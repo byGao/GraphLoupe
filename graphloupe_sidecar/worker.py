@@ -104,6 +104,17 @@ def _calls_interrupt(fn: Any) -> bool:
                for n in ast.walk(tree))
 
 
+def _edge_labels(drawable: Any) -> dict[str, str]:
+    """Branch condition per conditional edge (e.data), keyed "src->tgt". langgraph
+    omits e.data when the path-map key equals the target name, so only meaningfully
+    named branches get a label — which is what we want to show."""
+    out: dict[str, str] = {}
+    for e in getattr(drawable, "edges", []):
+        if getattr(e, "data", None):
+            out[f"{e.source}->{e.target}"] = str(e.data)
+    return out
+
+
 def _node_kinds(drawable: Any) -> dict[str, str]:
     """Static best-effort lane classification: a node is "llm" (inference) if it
     references a model instance or calls interrupt(), else "script". Runtime
@@ -460,6 +471,7 @@ def main() -> None:
             projectRoot=args.project_root or None,
             nodeDocs=_node_docs(g),
             nodeKinds=_node_kinds(g),
+            edgeLabels=_edge_labels(g),
         ).model_dump_json())
     except Exception as exc:  # import error / missing attr / build raises
         _emit(P.ErrorEvent(code="graph_load_failed",

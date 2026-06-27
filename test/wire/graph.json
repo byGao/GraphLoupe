@@ -41,5 +41,8 @@
   "nodeKinds": {
     "prepare": "script",
     "llm": "llm"
+  },
+  "edgeLabels": {
+    "prepare->llm": "go"
   }
 }

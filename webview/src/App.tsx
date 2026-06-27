@@ -6,6 +6,7 @@ import {
   overviewRows, reduce, tokenSummary,
   type CanvasState, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
+import { dagreLayout } from "./layout";
 import type { ServerEvent } from "../../protocol";
 
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
@@ -181,85 +182,11 @@ function TokenPanel({ state }: { state: CanvasState }) {
   );
 }
 
-const NODE_W = 184;
-const ROW_H = 124;
-const LANE_X: Record<"script" | "llm", number> = { script: 40, llm: 360 };
-
-/** Two-lane top-to-bottom layout: y by BFS depth from __start__, x by node kind
- *  (script left / llm right). A linear pipeline alternates lanes -> left/right zigzag.
- *  __start__/__end__ sit in the script lane. Collisions at the same (depth,lane) are
- *  nudged right. Edges are rendered orthogonally (type:"step"), so no diagonals. */
-function layout(
-  nodes: string[], edges: [string, string][], kindOf: (n: string) => "llm" | "script",
-): Record<string, { x: number; y: number }> {
-  const adj: Record<string, string[]> = {};
-  nodes.forEach((n) => (adj[n] = []));
-  edges.forEach(([s, t]) => adj[s]?.push(t));
-  const depth: Record<string, number> = {};
-  const start = nodes.includes("__start__") ? "__start__" : nodes[0];
-  const queue: string[] = start ? [start] : [];
-  if (start) depth[start] = 0;
-  while (queue.length) {
-    const n = queue.shift() as string;
-    for (const m of adj[n] ?? []) {
-      if (depth[m] === undefined) {
-        depth[m] = depth[n] + 1;
-        queue.push(m);
-      }
-    }
-  }
-  let maxDepth = Math.max(0, ...Object.values(depth));
-  nodes.forEach((n) => { if (depth[n] === undefined) depth[n] = ++maxDepth; });
-  const perCell: Record<string, number> = {};
-  const pos: Record<string, { x: number; y: number }> = {};
-  nodes.forEach((n) => {
-    const lane = n === "__start__" || n === "__end__" ? "script" : kindOf(n);
-    const d = depth[n];
-    const key = `${d}:${lane}`;
-    const col = perCell[key] ?? 0;
-    perCell[key] = col + 1;
-    pos[n] = { x: LANE_X[lane] + col * (NODE_W + 28), y: 30 + d * ROW_H };
-  });
-  return pos;
-}
-
-const LANE_LABEL: Record<"script" | "llm", string> = { script: "⚙ script", llm: "⚡ llm / inference" };
-
-/** Sequence-diagram chrome: a header pill + a vertical lifeline per occupied lane,
- *  so the canvas reads as "classified columns, nodes arranged beneath". These are
- *  non-interactive decoration nodes (not connected by edges, behind the real nodes). */
-function laneDecorations(state: CanvasState, positions: Record<string, { x: number; y: number }>): Node[] {
-  const lanes = new Set<"script" | "llm">();
-  state.nodes.forEach((id) =>
-    lanes.add(id === "__start__" || id === "__end__" ? "script" : nodeKind(state, id)));
-  const ys = Object.values(positions).map((p) => p.y);
-  if (ys.length === 0) return [];
-  const maxY = Math.max(...ys);
-  const headerY = -84;
-  const deco: Node[] = [];
-  for (const lane of lanes) {
-    deco.push({
-      id: `__lifeline_${lane}`,
-      position: { x: LANE_X[lane] + NODE_W / 2, y: headerY + 36 },
-      data: { label: "" }, draggable: false, selectable: false, connectable: false, zIndex: 0,
-      style: {
-        width: 0, height: maxY - headerY + 24, padding: 0, borderRadius: 0,
-        border: "none", borderLeft: "1px dashed var(--line)", background: "transparent", opacity: 0.6,
-      },
-    });
-    deco.push({
-      id: `__hdr_${lane}`,
-      position: { x: LANE_X[lane], y: headerY },
-      data: { label: LANE_LABEL[lane] }, draggable: false, selectable: false, connectable: false, zIndex: 1,
-      style: {
-        width: NODE_W, textAlign: "center", fontFamily: "var(--mono)", fontWeight: 600, fontSize: 11.5,
-        letterSpacing: 0.5, padding: "5px 8px", borderRadius: 7, background: "var(--surface-2)",
-        color: lane === "llm" ? "var(--accent)" : "var(--muted)",
-        border: `1px solid ${lane === "llm" ? "var(--accent)" : "var(--line)"}`,
-      },
-    });
-  }
-  return deco;
+const NODE_W = 190;
+/** Box dagre reserves per node: taller when it carries a purpose line. */
+function nodeSize(state: CanvasState, id: string): { w: number; h: number } {
+  const synthetic = id === "__start__" || id === "__end__";
+  return { w: NODE_W, h: synthetic ? 40 : state.nodeDocs[id] ? 78 : 48 };
 }
 
 /** Sidebar overview: graph title + node count + per-node {kind, name, purpose};
@@ -306,8 +233,8 @@ export default function App() {
   const rf = useRef<ReactFlowInstance | null>(null);
 
   const positions = useMemo(
-    () => layout(state.nodes, state.edges, (n) => nodeKind(state, n)),
-    [state.nodes, state.edges, state.nodeKinds],
+    () => dagreLayout(state.nodes, state.edges, (n) => nodeSize(state, n)),
+    [state.nodes, state.edges, state.nodeDocs],
   );
 
   const focusNode = (id: string) => {
@@ -380,16 +307,21 @@ export default function App() {
         },
       };
     });
-    return [...laneDecorations(state, positions), ...real];
+    return real;
   }, [state.nodes, state.nodeDocs, state.nodeKinds, state.active, positions, focused, breakpoints]);
 
   const edges: Edge[] = useMemo(
-    () => state.edges.map(([s, t], i) => ({
-      id: `e${i}`, source: s, target: t, type: "smoothstep",
-      style: { stroke: "#6b7785", strokeWidth: 1.6 },
-      markerEnd: { type: MarkerType.ArrowClosed, color: "#6b7785", width: 18, height: 18 },
-    })),
-    [state.edges],
+    () => state.edges.map(([s, t], i) => {
+      const label = state.edgeLabels[`${s}->${t}`];
+      return {
+        id: `e${i}`, source: s, target: t, type: "smoothstep", label,
+        labelStyle: { fill: "var(--pause)", fontFamily: "var(--mono)", fontSize: 10 },
+        labelBgStyle: { fill: "var(--surface-2)" }, labelBgPadding: [4, 2] as [number, number],
+        style: { stroke: "#6b7785", strokeWidth: 1.6, strokeDasharray: label ? "5 3" : undefined },
+        markerEnd: { type: MarkerType.ArrowClosed, color: "#6b7785", width: 18, height: 18 },
+      };
+    }),
+    [state.edges, state.edgeLabels],
   );
 
   return (
@@ -470,6 +402,17 @@ export default function App() {
           <Background />
           <Controls />
         </ReactFlow>
+        {state.nodes.length > 0 && (
+          <div style={{
+            position: "absolute", top: 10, right: 10, display: "flex", gap: 14, alignItems: "center",
+            padding: "5px 10px", borderRadius: 7, background: "var(--surface)", border: "1px solid var(--line)",
+            fontSize: 11, color: "var(--muted)", pointerEvents: "none",
+          }}>
+            <span><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--line)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />script</span>
+            <span style={{ color: "var(--accent)" }}><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--accent)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />⚡ llm / inference</span>
+            <span style={{ color: "var(--pause)" }}>— — branch (label)</span>
+          </div>
+        )}
         {needsGraphSelection(state) && !state.pending && (
           <div
             style={{

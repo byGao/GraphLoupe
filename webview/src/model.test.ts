@@ -16,7 +16,7 @@ describe("canvas reducer", () => {
     let s: CanvasState = {
       nodes: ["llm"], edges: [], active: null, running: true, error: null,
       pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
-      projectRoot: null, tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {},
+      projectRoot: null, tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {},
     };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
@@ -165,6 +165,14 @@ describe("canvas reducer", () => {
       nodeKinds: { prepare: "script", llm: "llm" } }));
     expect(nodeKind(s, "llm")).toBe("llm");      // classified before any run
     expect(nodeKind(s, "prepare")).toBe("script");
+  });
+
+  it("graph event stores edge branch labels", () => {
+    const s = reduce(initialState, ev({ type: "graph", nodes: ["gate", "review", "plan"],
+      edges: [["gate", "review"], ["gate", "plan"]],
+      edgeLabels: { "gate->review": "human", "gate->plan": "redo" } }));
+    expect(s.edgeLabels["gate->review"]).toBe("human");
+    expect(s.edgeLabels["gate->plan"]).toBe("redo");
   });
 
   it("node kind: llm once a chat-model call or manual interrupt is observed; persists across runs", () => {

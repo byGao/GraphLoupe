@@ -105,6 +105,9 @@ class GraphTopology(Envelope):
     # interrupt) or "script". Best-effort; the webview refines it from runtime
     # llm_start / manual_inference_required events. Added graph-overview-lanes.
     nodeKinds: dict[str, str] | None = None
+    # Branch condition per conditional edge, keyed "src->tgt" (e.g. "gate->review":
+    # "human"). From get_graph().edges[i].data. Added graph-autolayout.
+    edgeLabels: dict[str, str] | None = None
 
 
 class RunStarted(Envelope):
