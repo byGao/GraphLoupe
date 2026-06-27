@@ -186,10 +186,12 @@ function TokenPanel({ state }: { state: CanvasState }) {
 }
 
 const NODE_W = 190;
-/** Box ELK reserves per node: taller when it carries a purpose line. */
+/** FIXED box per node — fed to ELK *and* applied as the rendered height, so edge
+ *  routes (computed for these sizes) line up with the actual node borders. The
+ *  purpose text is clamped to fit, so content never grows the node past this. */
 function nodeSize(state: CanvasState, id: string): { w: number; h: number } {
   const synthetic = id === "__start__" || id === "__end__";
-  return { w: NODE_W, h: synthetic ? 40 : state.nodeDocs[id] ? 78 : 48 };
+  return { w: NODE_W, h: synthetic ? 40 : state.nodeDocs[id] ? 96 : 48 };
 }
 
 /** Draws ELK's exact orthogonal route (data.points) so edges never overlap or cut
@@ -330,7 +332,10 @@ export default function App() {
                 {kind === "llm" ? "⚡ " : ""}{id}
               </div>
               {doc && (
-                <div style={{ fontFamily: "var(--sans)", fontSize: 10.5, color: "#aab6c4", marginTop: 4, whiteSpace: "normal", lineHeight: 1.4 }}>
+                <div style={{
+                  fontFamily: "var(--sans)", fontSize: 10.5, color: "#aab6c4", marginTop: 4, lineHeight: 1.4,
+                  display: "-webkit-box", WebkitLineClamp: 3, WebkitBoxOrient: "vertical", overflow: "hidden",
+                }}>
                   {doc}
                 </div>
               )}
@@ -340,7 +345,8 @@ export default function App() {
         sourcePosition: Position.Bottom,
         targetPosition: Position.Top,
         style: {
-          width: NODE_W, textAlign: "left", padding: synthetic ? "5px 10px" : "8px 11px",
+          width: NODE_W, height: nodeSize(state, id).h, overflow: "hidden",
+          textAlign: "left", padding: synthetic ? "5px 10px" : "8px 11px",
           borderColor: kind === "llm" ? "var(--accent)" : "var(--line)",
           ...(id === state.active ? { border: "2px solid var(--run)", background: "rgba(76,195,138,0.14)" } : {}),
           ...(id === focused ? { boxShadow: "0 0 0 2px var(--node)" } : {}),
