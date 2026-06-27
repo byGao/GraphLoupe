@@ -50,27 +50,37 @@ LEVELS: list[tuple[str, str, object]] = [
 ]
 
 
-def main() -> int:
+def main(live_only: bool = False) -> int:
+    """Run the gate. ``live_only`` skips PENDING levels and treats green live
+    levels as success (exit 0) — this is what CI runs so the badge means
+    "every level that exists today passes," without a false green and without
+    duplicating each level's command list outside this file."""
     pending = []
     for level_id, desc, runner in LEVELS:
         if runner is None:
-            print(f"  {level_id}  PENDING  {desc}")
+            print(f"  {level_id}  {'SKIP   ' if live_only else 'PENDING'}  {desc}")
             pending.append(level_id)
             continue
         # When calibrated, runner() runs the level and raises on failure.
         print(f"  {level_id}  RUN      {desc}")
         runner()  # type: ignore[operator]
 
-    if pending:
+    if pending and not live_only:
         print(
             f"\nquality_gate: {len(pending)} level(s) PENDING "
             f"({', '.join(pending)}) - calibrate in a later phase.",
             file=sys.stderr,
         )
         return 2
+    if pending:
+        print(
+            f"\nquality_gate: live levels PASSED; "
+            f"{len(pending)} level(s) not built yet ({', '.join(pending)})."
+        )
+        return 0
     print("\nquality_gate: all levels PASSED")
     return 0
 
 
 if __name__ == "__main__":
-    raise SystemExit(main())
+    raise SystemExit(main(live_only="--live" in sys.argv[1:]))

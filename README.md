@@ -1,5 +1,8 @@
 # GraphLoupe — a self-hosted LangGraph debugger for VS Code
 
+[![CI](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml/badge.svg)](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+
 **Debug a LangGraph graph at the node level.** Step through execution, inspect and
 diff state between nodes, time-travel from any checkpoint, count tokens per LLM
 node, and even pause a node to paste an answer from any chat (GitHub Copilot,
@@ -85,6 +88,23 @@ browser to watch it loop**; GitHub shows the first frame):
 | `extension/src/extension.ts` | VS Code extension host — spawns the sidecar, bridges WebSocket ↔ webview, commands |
 | `webview/src/` | React + React Flow canvas + manual-inference panel |
 | `scripts/quality_gate.py` | L0 (flake8 + mypy + bandit + PIN pytest) + L1 (vitest round-trip) |
+
+## Trust & safety
+
+GraphLoupe is a debugger, so it loads and runs your graph — here's the boundary, in
+short (full threat model in [SECURITY.md](SECURITY.md)):
+
+- **100 % local — no telemetry, no analytics, no phone-home.** The only network
+  traffic is a `localhost` WebSocket between the extension and the sidecar. Your code
+  and prompts never leave your machine.
+- **No credentials are requested or stored.** No API-key field; manual inference uses
+  *your own* chat session. If your graph calls a real model, it uses your project's
+  existing credentials — GraphLoupe doesn't touch them.
+- **Discovery never runs your code** (static AST scan); **execution** happens in an
+  **isolated sidecar subprocess**, not in your IDE.
+- **MIT-licensed, no install-time scripts.** Process isolation guards against buggy/
+  runaway graphs, *not* deliberately malicious code — so point it at graphs you'd run
+  yourself. See [SECURITY.md](SECURITY.md) for what's hardened and what's on the roadmap.
 
 ## Setup (once)
 
