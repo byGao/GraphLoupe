@@ -25,13 +25,23 @@ npm install
 npm run build          # bundles extension + webview into dist/
 ```
 
-## Quick start (built-in demo)
+## Quick start (the feature showcase)
 
 1. Open this folder (`apps/GraphLoupe`) in VS Code.
 2. Press **F5** → "Run GraphLoupe Extension" (an Extension Development Host opens).
 3. In the dev window: **Ctrl/Cmd+Shift+P → "GraphLoupe: Open Graph Panel"**.
-4. Click **"Select Graph…"** → pick `graphloupe_sidecar.graph:build_graph`.
-5. Click **▶ Run** (leave the input box as `{}`). The nodes light up as it runs.
+4. Set the graph entry to **`graphloupe_sidecar.graph:showcase_graph`** (Select Graph,
+   or `graphloupe.graphEntry` in settings) — a graph that exercises *every* feature.
+5. You should immediately see (no run needed): two lanes with headers — **⚙ script**
+   (`ingest`, `gate`) and **⚡ llm / inference** (`plan`, `review`, `synthesize`) —
+   laid out top-to-bottom with arrows, a branch from `gate`, and a left **overview**
+   table (click a row to center that node).
+6. Click **▶ Run**. Nodes light up; at `review` the **Manual inference** panel opens
+   (paste any answer → Send resume); when it finishes the **Token economy** panel
+   shows per-node prompt/completion for `plan` and `synthesize`.
+
+> The simpler `graphloupe_sidecar.graph:build_graph` (prepare → llm) and
+> `…:manual_demo` are also available if you want a minimal graph.
 
 ## Use it on YOUR graph
 
@@ -61,6 +71,24 @@ buttons and `target` as a text field (lists/dicts like `worklist`/`nodes` defaul
 empty). Fill them and ▶ Run — no JSON needed. If a node still needs a key you left
 blank, the error banner names it (e.g. `run failed: KeyError: 'repo_path'`).
 
+## Make your graph read well in GraphLoupe
+
+GraphLoupe reads your graph **as written** — it never guesses. The more of these
+you do, the more it can show. None are required; each unlocks one thing.
+
+| To get this in GraphLoupe | Write this in your graph |
+|---|---|
+| **Node purpose** (overview table + the line under each node) | A **docstring** on each node function. GraphLoupe shows its first line. |
+| **A node in the ⚡ llm / inference lane** | Have the node **reference your chat model** (a `BaseLanguageModel`/`BaseChatModel` it closes over or reads from a global), **or** call **`interrupt()` directly** in the node body. Both are detected at load. Indirect cases (model built in a helper, `interrupt` behind a wrapper) aren't seen statically but are reclassified once observed during a run. |
+| **Token economy counts** (prompt / completion per node) | **Invoke a chat model** inside the node. If the model returns `usage_metadata` (real APIs) the counts are exact (`api_usage`); otherwise GraphLoupe falls back to a char-based estimate (`sidecar_estimate`, shown with a `~` and a "relative comparison only" caveat). |
+| **Run-input form with field descriptions** | Give the graph a **Pydantic** input/state with `Field(description=…)`; GraphLoupe reads `get_input_jsonschema()` and shows the description under each field. A plain `TypedDict` yields field **names only** (no descriptions). Name path-like fields with `repo`/`dir`/`out`/`path`/`file` to get a **Browse…** picker. |
+| **Breakpoints / step / state diff / time-travel** | **`compile(checkpointer=…)`** (e.g. `MemorySaver()`). Without a checkpointer the graph runs to completion but cannot pause. |
+| **Manual-inference pause** (export prompt → paste answer → resume) | Call **`interrupt(payload)`** with the contract-shaped payload: `renderedText`, `messages`, `expects` (`"text"`/`"tool_call"`), `toolSchema`, `promptTokens`. See `manual_infer()` in `graphloupe_sidecar/graph.py` for the shape. |
+| **Discoverable by "Select Graph"** | Export a **top-level factory** returning a compiled graph, named `build_graph` / `build_app` / `make_graph` / `create_graph` (or any function that imports langgraph and calls `.compile()`). |
+
+`graphloupe_sidecar/graph.py:build_showcase` is a worked example that does all of the
+above — read it as the template.
+
 ## Manual inference (the differentiator)
 
 If a node pauses with `interrupt()` (a "ManualChatModel"), GraphLoupe turns the run
@@ -85,14 +113,18 @@ can fix it.
 | Banner: `graph_load_failed: ...` | The entry couldn't import / has no such callable. The message names the cause. |
 | Banner: `run failed: KeyError: 'x'` | Your graph needs input key `x` — fill that field in the run-input form (or the JSON box). |
 | `No checkpointer set` (fixed) | A graph compiled without a checkpointer runs to completion but **cannot pause / manual-infer / time-travel** (those need `compile(checkpointer=…)`). |
-| Run looks stuck / too long | There's no breakpoint/Stop yet (debugging is a later phase). Use **"GraphLoupe: Reload Graph"** to abort and restart. |
+| Run looks stuck / too long | Set a **breakpoint** (click a node) to pause and step, or use **"GraphLoupe: Reload Graph"** to abort and restart. |
+| Canvas is a single lane | No node was classified `llm` — your nodes don't reference a model or call `interrupt()` (e.g. all stubs). That's correct; the second lane appears when a node actually infers. |
 
 ## What works today
 
-- ✅ **Graph visualization** — topology renders, active node highlights during a run.
+- ✅ **Graph visualization** — two-lane (script / llm) top-to-bottom layout with
+  arrows + a sidebar overview (node purpose, click to focus); active node highlights.
+- ✅ **Step debugging** — breakpoints, state snapshot + diff, step, time-travel fork
+  (needs `compile(checkpointer=…)`).
 - ✅ **Manual inference** — interrupt → paste → resume (text + tool_call).
-- ⬜ **Step debugging** (breakpoints / state / diff / time-travel) — roadmap.
-- ⬜ **Token economy panel** — roadmap.
+- ✅ **Token economy panel** — per-node prompt/completion + run total + heaviest-node
+  hint (exact when the model reports usage, else a flagged estimate).
 - Copilot auto-path (`vscode.lm`) and a security sandbox for untrusted graphs are
   on the backlog (`workflow/stages/graphloupe/backlog.html`).
 

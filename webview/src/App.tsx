@@ -1,5 +1,5 @@
 import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
-import { ReactFlow, Background, Controls, Position, type Node, type Edge, type ReactFlowInstance } from "@xyflow/react";
+import { ReactFlow, Background, Controls, MarkerType, Position, type Node, type Edge, type ReactFlowInstance } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
   buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind,
@@ -240,9 +240,12 @@ function laneDecorations(state: CanvasState, positions: Record<string, { x: numb
   for (const lane of lanes) {
     deco.push({
       id: `__lifeline_${lane}`,
-      position: { x: LANE_X[lane] + NODE_W / 2 - 1, y: headerY + 36 },
+      position: { x: LANE_X[lane] + NODE_W / 2, y: headerY + 36 },
       data: { label: "" }, draggable: false, selectable: false, connectable: false, zIndex: 0,
-      style: { width: 2, height: maxY - headerY + 24, padding: 0, borderRadius: 0, border: "none", background: "var(--line)" },
+      style: {
+        width: 0, height: maxY - headerY + 24, padding: 0, borderRadius: 0,
+        border: "none", borderLeft: "1px dashed var(--line)", background: "transparent", opacity: 0.6,
+      },
     });
     deco.push({
       id: `__hdr_${lane}`,
@@ -381,7 +384,11 @@ export default function App() {
   }, [state.nodes, state.nodeDocs, state.nodeKinds, state.active, positions, focused, breakpoints]);
 
   const edges: Edge[] = useMemo(
-    () => state.edges.map(([s, t], i) => ({ id: `e${i}`, source: s, target: t, type: "step" })),
+    () => state.edges.map(([s, t], i) => ({
+      id: `e${i}`, source: s, target: t, type: "smoothstep",
+      style: { stroke: "#6b7785", strokeWidth: 1.6 },
+      markerEnd: { type: MarkerType.ArrowClosed, color: "#6b7785", width: 18, height: 18 },
+    })),
     [state.edges],
   );
 

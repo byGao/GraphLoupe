@@ -10,7 +10,7 @@ import asyncio
 from typing import Annotated, Any, Callable, TypedDict
 
 from langchain_core.language_models.fake_chat_models import FakeMessagesListChatModel
-from langchain_core.messages import AIMessage, BaseMessage
+from langchain_core.messages import AIMessage, BaseMessage, HumanMessage
 from langgraph.checkpoint.memory import MemorySaver
 from langgraph.func import task
 from langgraph.graph import END, START, StateGraph
@@ -122,6 +122,92 @@ def build_manual_graph(spy: Callable[[], None] | None = None, step_delay: float 
 def manual_demo():
     """Default-discoverable manual graph for the picker / F5 demo."""
     return build_manual_graph()
+
+
+def build_showcase(step_delay: float = 0.0):
+    """Feature-showcase graph: exercises every GraphLoupe capability in one run.
+
+    Shape (a branch, not a line, so order + routing are visible)::
+
+        __start__ -> ingest -> plan -> gate --(needs human)--> review -> synthesize -> __end__
+                                          \\--(auto)-----------------------/
+
+    What each capability sees here:
+      - visualization + lanes: ``ingest``/``gate`` are script; ``plan``/``synthesize``
+        reference a chat model (closure) -> llm lane; ``review`` calls interrupt()
+        -> llm/inference lane. The conditional edge from ``gate`` shows branching.
+      - token economy: ``plan`` and ``synthesize`` each invoke the model -> two rows.
+      - step debugging: compiled with a checkpointer, so breakpoints / step / fork work.
+      - manual inference: ``review`` pauses via interrupt() for a human decision.
+      - overview: every node has a docstring first line (shown as its purpose).
+    """
+    model = FakeMessagesListChatModel(
+        responses=[AIMessage(content="1. scan 2. group 3. summarize"),
+                   AIMessage(content="Done: 3 modules, 1 risk flagged.")],
+    )
+
+    async def ingest(state: State) -> dict[str, Any]:
+        """Normalize the incoming request into the first message (script node)."""
+        if step_delay:
+            await asyncio.sleep(step_delay)
+        if state.get("messages"):
+            return {"steps": 1}
+        req = HumanMessage(content="Analyze this repo and summarize its architecture.")
+        return {"messages": [req], "steps": 1}
+
+    async def plan(state: State) -> dict[str, Any]:
+        """Ask the model to outline steps (LLM node; counts toward token economy)."""
+        if step_delay:
+            await asyncio.sleep(step_delay)
+        reply = await model.ainvoke(state.get("messages") or [])
+        return {"messages": [reply], "steps": state.get("steps", 0) + 1}
+
+    def gate(state: State) -> dict[str, Any]:
+        """Confidence gate (script): decide whether a human should review the plan."""
+        return {}
+
+    def route(state: State) -> str:
+        # first pass -> human review; thereafter -> auto (keeps the demo finite)
+        return "review" if state.get("steps", 0) < 3 else "auto"
+
+    def review(state: State) -> dict[str, Any]:
+        """Pause for a human decision on the plan (manual inference via interrupt())."""
+        msgs = state.get("messages") or [AIMessage(content="(plan)")]
+        rendered = "\n".join(f"{getattr(m, 'type', 'human')}: {m.content}" for m in msgs)
+        answer = interrupt({  # direct interrupt() so the lane is classified statically
+            "renderedText": rendered,
+            "messages": [{"role": "human", "content": rendered, "name": None, "toolCallId": None}],
+            "expects": "text", "toolSchema": None,
+            "promptTokens": {"prompt": _estimate_tokens(msgs), "completion": None,
+                             "source": "sidecar_estimate"},
+        })
+        return {"messages": [HumanMessage(content=str(answer))], "steps": state.get("steps", 0) + 1}
+
+    async def synthesize(state: State) -> dict[str, Any]:
+        """Summarize the outcome with the model (LLM node; second token-economy row)."""
+        if step_delay:
+            await asyncio.sleep(step_delay)
+        reply = await model.ainvoke(state.get("messages") or [])
+        return {"messages": [reply], "steps": state.get("steps", 0) + 1}
+
+    g = StateGraph(State)
+    g.add_node("ingest", ingest)
+    g.add_node("plan", plan)
+    g.add_node("gate", gate)
+    g.add_node("review", review)
+    g.add_node("synthesize", synthesize)
+    g.add_edge(START, "ingest")
+    g.add_edge("ingest", "plan")
+    g.add_edge("plan", "gate")
+    g.add_conditional_edges("gate", route, {"review": "review", "auto": "synthesize"})
+    g.add_edge("review", "synthesize")
+    g.add_edge("synthesize", END)
+    return g.compile(checkpointer=MemorySaver())
+
+
+def showcase_graph():
+    """Default-discoverable showcase for the F5 demo (visible per-node step delay)."""
+    return build_showcase(step_delay=0.4)
 
 
 def build_interrupt_graph(spy: Callable[[], None]):
