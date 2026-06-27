@@ -219,3 +219,4 @@ __marimo__/
 
 # Node / TypeScript (GraphLoupe extension + webview)
 node_modules/
+docs/img/.rendered/
