@@ -34,7 +34,7 @@
   <!-- moving active-node highlight (on top): dwells at each node in execution order
        (ingest, plan, gate, plan[redo], gate, review, synthesize) on an 11s loop.
        translucent fill keeps the label readable; green border = "active". -->
-  <rect x="80" width="160" height="44" rx="8" fill="rgba(76,195,138,0.16)" stroke="#4cc38a" stroke-width="2">
+  <rect x="80" y="64" width="160" height="44" rx="8" fill="rgba(76,195,138,0.16)" stroke="#4cc38a" stroke-width="2">
     <animate attributeName="y" dur="11s" repeatCount="indefinite" calcMode="discrete"
       keyTimes="0;0.125;0.25;0.375;0.5;0.625;0.75;1"
       values="64;144;224;144;224;304;384;384"/>
