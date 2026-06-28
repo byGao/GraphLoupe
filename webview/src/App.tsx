@@ -405,7 +405,7 @@ export default function App() {
       : sendRun(inputText);
 
   const TABS: { id: InspectorTab; label: string; dot?: boolean }[] = [
-    { id: "run", label: "Run" },
+    { id: "run", label: "Input" },
     { id: "state", label: "State", dot: !!state.paused },
     { id: "tokens", label: "Tokens" },
     { id: "manual", label: "Manual", dot: !!state.pending },
