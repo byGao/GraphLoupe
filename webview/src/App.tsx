@@ -280,9 +280,19 @@ export default function App() {
   }, [topoKey]);
   const positions = layout.pos;
 
+  // ELK resolves async, after the initial `fitView` has already run on an empty
+  // canvas — so refit once the laid-out nodes exist (only on a new layout, i.e.
+  // graph load; topology is stable during a run, so this never yanks a live view).
+  useEffect(() => {
+    if (Object.keys(layout.pos).length > 0) {
+      requestAnimationFrame(() => rf.current?.fitView({ duration: 300 }));
+    }
+  }, [layout]);
+
+  // frame the node by id (React Flow measures it) instead of hand-computing a
+  // center from a guessed node height — the latter mis-centered tall nodes.
   const focusNode = (id: string) => {
-    const p = positions[id];
-    if (p && rf.current) rf.current.setCenter(p.x + NODE_W / 2, p.y + 26, { zoom: 1.3, duration: 400 });
+    if (positions[id]) rf.current?.fitView({ nodes: [{ id }], duration: 400, maxZoom: 1.4 });
     setFocused(id);
   };
 
