@@ -223,3 +223,6 @@ docs/img/.rendered/
 
 # agent working-discipline notes — kept local, not part of the public repo
 CLAUDE.md
+
+# packaged extension (build artifact)
+*.vsix

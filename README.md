@@ -54,12 +54,12 @@ self-hosting**.
 
 ## At a glance
 
-![GraphLoupe architecture](docs/img/architecture.svg)
+![GraphLoupe architecture](docs/img/architecture.png)
 
 The IDE never imports your graph. A FastAPI sidecar spawns an **isolated worker**
 that imports and runs it; events stream back over a frozen `protocol` contract.
 
-![Reading the canvas](docs/img/canvas-legend.svg)
+![Reading the canvas](docs/img/canvas-legend.png)
 
 The canvas is auto-laid out (ELK, orthogonal): nodes are coloured by kind
 (script vs ⚡ llm/inference), forward edges flow down, conditional branches are
@@ -74,10 +74,12 @@ dashed + labelled, and loops route on the left with a ↺.
 Open `graphloupe_sidecar.graph:showcase_graph` to see all of it at once
 (see [Quick start](#quick-start-the-feature-showcase)).
 
-Its control flow (the active node lights up as it runs — **open this SVG in a
-browser to watch it loop**; GitHub shows the first frame):
+Its control flow (the active node lights up as it runs):
 
-![showcase execution replay](docs/img/run-replay.svg)
+![showcase execution replay](docs/img/run-replay.png)
+
+> Open [`docs/img/run-replay.svg`](docs/img/run-replay.svg) in a browser to watch
+> the active node step through the run.
 
 ## Layout
 
@@ -106,13 +108,28 @@ short (full threat model in [SECURITY.md](SECURITY.md)):
   runaway graphs, *not* deliberately malicious code — so point it at graphs you'd run
   yourself. See [SECURITY.md](SECURITY.md) for what's hardened and what's on the roadmap.
 
-## Setup (once)
+## Install
+
+**From a `.vsix` (sideload)** — until the Marketplace listing lands:
+
+1. Get `graphloupe-<version>.vsix` — download a release, or build it:
+   `npm install && npm run package`.
+2. VS Code → **Extensions** view → `⋯` menu → **Install from VSIX…** → pick the file
+   (or `code --install-extension graphloupe-<version>.vsix`).
+3. **Ctrl/Cmd+Shift+P → "GraphLoupe: Open Graph Panel"**.
+
+> For now the sidecar still needs **Python with the deps in `requirements.lock`** on
+> your PATH. Automatic Python/venv setup is on the roadmap; a Marketplace listing is
+> planned.
+
+## Develop (run from source)
 
 Needs **Node 18+** and **Python** with the deps in `requirements.lock`.
 
 ```bash
 npm install
 npm run build          # bundles extension + webview into dist/
+npm run package        # build a .vsix
 ```
 
 ## Quick start (the feature showcase)
@@ -166,7 +183,7 @@ blank, the error banner names it (e.g. `run failed: KeyError: 'repo_path'`).
 GraphLoupe reads your graph **as written** — it never guesses. The more of these
 you do, the more it can show. None are required; each unlocks one thing.
 
-![Write this, GraphLoupe shows that](docs/img/authoring.svg)
+![Write this, GraphLoupe shows that](docs/img/authoring.png)
 
 | To get this in GraphLoupe | Write this in your graph |
 |---|---|
@@ -183,7 +200,7 @@ above — read it as the template.
 
 ## Manual inference (the differentiator)
 
-![Manual inference flow](docs/img/manual-inference-flow.svg)
+![Manual inference flow](docs/img/manual-inference-flow.png)
 
 If a node pauses with `interrupt()` (a "ManualChatModel"), GraphLoupe turns the run
 into: **export the prompt → paste it into any chat (Copilot/ChatGPT/…) → paste the
@@ -212,7 +229,7 @@ can fix it.
 
 ## What works today
 
-![Four capabilities](docs/img/capabilities.svg)
+![Four capabilities](docs/img/capabilities.png)
 
 - ✅ **Graph visualization** — ELK orthogonal auto-layout (edges never overlap or cut
   through nodes), nodes coloured by kind (script vs ⚡ llm), conditional branches
@@ -226,7 +243,7 @@ can fix it.
 - Copilot auto-path (`vscode.lm`) and a security sandbox for untrusted graphs are
   on the backlog.
 
-![Step debugging flow](docs/img/debug-flow.svg)
+![Step debugging flow](docs/img/debug-flow.png)
 
 ## CLI checks (no VS Code needed)
 

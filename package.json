@@ -12,6 +12,8 @@
   "engines": {
     "vscode": "^1.90.0"
   },
+  "categories": ["Debuggers", "Visualization", "AI"],
+  "keywords": ["langgraph", "langchain", "agent", "debugger", "graph", "visualization", "llm"],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [
@@ -49,10 +51,13 @@
     "typecheck": "tsc --noEmit",
     "test": "vitest run",
     "check": "npm run typecheck && npm run test && npm run build",
-    "render-docs": "node scripts/render-docs.mjs"
+    "render-docs": "node scripts/render-docs.mjs",
+    "vscode:prepublish": "npm run build",
+    "package": "vsce package"
   },
   "devDependencies": {
     "@resvg/resvg-js": "^2.6.2",
+    "@vscode/vsce": "^3.2.0",
     "@types/node": "^20.14.0",
     "@types/react": "^18.3.3",
     "@types/react-dom": "^18.3.0",

@@ -1,0 +1,40 @@
+# What ships in the .vsix. The extension is esbuild-bundled into dist/, and the
+# extension host spawns the Python sidecar (python -m graphloupe_sidecar.server)
+# from the extension folder — so dist/ + the sidecar .py + requirements.lock must
+# ship, but node_modules and all TS/Python *sources* must not.
+
+# --- exclude: dependencies (extension is bundled into dist/) ---
+node_modules/**
+
+# --- exclude: TypeScript sources (bundled into dist/) + sourcemaps ---
+extension/**
+webview/**
+tsconfig*.json
+esbuild.mjs
+**/*.map
+protocol.ts
+
+# --- exclude: dev tooling / tests / caches / process docs ---
+scripts/**
+tests/**
+test/**
+**/*.test.*
+pin_dump.py
+pin_dump.golden.txt
+pyproject.toml
+.flake8
+**/__pycache__/**
+**/.mypy_cache/**
+**/.pytest_cache/**
+.github/**
+.vscode/**
+docs/img/.rendered/**
+scratch*/**
+.gitignore
+.vscodeignore
+vitest.config.*
+CLAUDE.md
+
+# (kept implicitly: dist/**, graphloupe_sidecar/**.py, protocol.py,
+#  requirements.lock, README.md, LICENSE, SECURITY.md, docs/img/*.svg|*.png,
+#  package.json)
