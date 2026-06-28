@@ -67,14 +67,9 @@ dashed + labelled, and loops route on the left with a ↺.
 
 ### The showcase graph, running
 
-| Canvas (showcase: branch + loop + manual + llm) | Token economy after a run |
-|---|---|
-| ![showcase canvas](docs/img/showcase-canvas.png) | ![token economy panel](docs/img/token-economy.png) |
-
-Open `graphloupe_sidecar.graph:showcase_graph` to see all of it at once
-(see [Quick start](#quick-start-the-feature-showcase)).
-
-Its control flow — the active node lights up as the graph runs:
+Open `graphloupe_sidecar.graph:showcase_graph` to exercise every feature at once
+(see [Quick start](#quick-start-the-feature-showcase)). The active node lights up
+as it runs and pauses at the manual node for your input:
 
 ![showcase execution replay](docs/img/run-replay.gif)
 
