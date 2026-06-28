@@ -1,6 +1,6 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, tokenSummary, topoOrder, type CanvasState } from "./model";
+import { autoTab, buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, tokenSummary, topoOrder, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
@@ -200,6 +200,14 @@ describe("canvas reducer", () => {
       { node: "a", kind: "script", doc: "do A" },
       { node: "b", kind: "llm", doc: "do B" },
     ]);
+  });
+
+  it("autoTab: manual pause -> manual, breakpoint pause -> state, else keep current", () => {
+    expect(autoTab({ ...initialState, pending: { node: "ask" } as never }, "run")).toBe("manual");
+    expect(autoTab({ ...initialState, paused: { node: "b", checkpointId: "c" } }, "tokens")).toBe("state");
+    expect(autoTab(initialState, "tokens")).toBe("tokens");        // nothing pending -> stay
+    // a manual pause wins over a breakpoint
+    expect(autoTab({ ...initialState, pending: { node: "ask" } as never, paused: { node: "b", checkpointId: "c" } }, "run")).toBe("manual");
   });
 
   it("needsGraphSelection: true with no graph, false once a graph loads", () => {

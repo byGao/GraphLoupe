@@ -5,9 +5,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind,
+  autoTab, buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind,
   overviewRows, reduce, tokenSummary,
-  type CanvasState, type ManualRequest, type Paused, type Snapshot,
+  type CanvasState, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
@@ -57,14 +57,14 @@ function postCmd(msg: Record<string, unknown>): void {
 function DebugPanel({ paused, snapshot }: { paused: Paused; snapshot: Snapshot | null }) {
   const [override, setOverride] = useState("");
   return (
-    <div className="gl-panel" style={{ padding: "10px 14px", maxHeight: "45%", overflow: "auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+    <div style={{ padding: "10px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
         <strong style={{ color: "var(--pause)" }}>‖ paused @ {paused.node}</strong>
         <span style={{ color: "#6e7681", fontSize: 12 }}>checkpoint {paused.checkpointId.slice(0, 8)}</span>
         <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
         <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
       </div>
-      <div style={{ display: "flex", gap: 10 }}>
+      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
         <div style={{ flex: 1 }}>
           <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>State</div>
           <pre style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, whiteSpace: "pre-wrap", margin: 0, maxHeight: 140, overflow: "auto" }}>
@@ -103,8 +103,8 @@ function ManualPanel({ pending }: { pending: ManualRequest }) {
   useEffect(() => setDraft(""), [pending.interruptId]);
   const isText = pending.expects === "text";
   return (
-    <div className="gl-panel" style={{ padding: "10px 14px", maxHeight: "45%", overflow: "auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+    <div style={{ padding: "10px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
         <strong style={{ color: "var(--pause)" }}>Manual inference</strong>
         <span style={{ color: "#6e7681", fontSize: 12 }}>
           node: {pending.node} · prompt ~{pending.promptTokens} tok (sidecar est) · expects: {pending.expects}
@@ -133,24 +133,22 @@ function ManualPanel({ pending }: { pending: ManualRequest }) {
  *  node flagged as the manual-optimization target. Hidden until a run emits LLM events
  *  (graphs with no LLM node simply show nothing). */
 function TokenPanel({ state }: { state: CanvasState }) {
-  const [open, setOpen] = useState(true);
   const s = useMemo(() => tokenSummary(state), [state]);
-  if (s.rows.length === 0) return null;
   const num: CSSProperties = { textAlign: "right", padding: "2px 8px", fontFamily: "var(--mono)" };
   const head: CSSProperties = { ...num, color: "var(--muted)", fontWeight: 400 };
+  if (s.rows.length === 0) {
+    return <div className="gl-help" style={{ padding: "12px" }}>No LLM calls yet — run a graph with an LLM node to see per-node token economy.</div>;
+  }
   return (
-    <div className="gl-panel" style={{ padding: "8px 14px", maxHeight: "38%", overflow: "auto" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6 }}>
+    <div style={{ padding: "10px 12px" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6, flexWrap: "wrap" }}>
         <strong style={{ color: "var(--pause)" }}>⟁ Token economy</strong>
         {s.heaviest && (
           <span className="gl-help">heaviest: <span className="gl-node">{s.heaviest}</span>
-            {s.estimated ? " · 估算值，僅供相對比較" : ""}</span>
+            {s.estimated ? " · est." : ""}</span>
         )}
-        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => setOpen((o) => !o)}>
-          {open ? "收合" : "展開"}
-        </button>
       </div>
-      {open && (
+      {(
         <table style={{ width: "100%", borderCollapse: "collapse", fontSize: 12 }}>
           <thead>
             <tr>
@@ -261,7 +259,11 @@ export default function App() {
   const [breakpoints, setBreakpoints] = useState<Set<string>>(new Set());
   const [showOverview, setShowOverview] = useState(true);
   const [focused, setFocused] = useState<string | null>(null);
+  const [tab, setTab] = useState<InspectorTab>("run");
   const rf = useRef<ReactFlowInstance | null>(null);
+
+  // a manual-inference / breakpoint pause auto-surfaces the relevant inspector tab
+  useEffect(() => { setTab((t) => autoTab(state, t)); }, [state.pending, state.paused]);
 
   // ELK runs its solver async; only re-layout when the topology (not the run
   // highlight) changes. Keyed on nodes+edges+docs so a run doesn't reflow.
@@ -397,123 +399,151 @@ export default function App() {
     });
   }, [state.edges, state.edgeLabels, layout.routes, positions]);
 
+  const runGraph = () =>
+    state.inputSchema && !showRaw
+      ? sendRunObject(buildInput(state.inputSchema, form))
+      : sendRun(inputText);
+
+  const TABS: { id: InspectorTab; label: string; dot?: boolean }[] = [
+    { id: "run", label: "Run" },
+    { id: "state", label: "State", dot: !!state.paused },
+    { id: "tokens", label: "Tokens" },
+    { id: "manual", label: "Manual", dot: !!state.pending },
+  ];
+
   return (
     <div style={{ position: "absolute", inset: 0, display: "flex", flexDirection: "column" }}>
-      <div style={{ padding: 8, borderBottom: "1px solid var(--line)" }}>
-        <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-          <button
-            disabled={state.running}
-            onClick={() =>
-              state.inputSchema && !showRaw
-                ? sendRunObject(buildInput(state.inputSchema, form))
-                : sendRun(inputText)
-            }
-          >
-            ▶ Run
-          </button>
-          <span style={{ color: "#8b949e", fontSize: 12 }}>
-            read-only{state.running ? " · running" : ""}
-          </span>
-          <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => setShowOverview((o) => !o)}>
-            ⌑ Overview
-          </button>
-          {state.inputSchema && (
-            <button style={{ fontSize: 12 }} onClick={() => setShowRaw((r) => !r)}>
-              {showRaw ? "Form" : "JSON"}
-            </button>
-          )}
-        </div>
-        {state.inputSchema && !showRaw ? (
-          <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 8 }}>
-            {formFields(state.inputSchema).map((f) => (
-              <div key={f.name}>
-                <div style={{ display: "flex", alignItems: "center", gap: 8 }}>
-                  <label style={{ minWidth: 120, fontSize: 12 }} title={f.title}>{f.name}</label>
-                  <input
-                    style={{ flex: 1 }}
-                    value={form[f.name] ?? ""}
-                    onChange={(e) => setForm({ ...form, [f.name]: e.target.value })}
-                    type={f.type === "integer" || f.type === "number" ? "number" : "text"}
-                    placeholder={f.placeholder}
-                    spellCheck={false}
-                  />
-                  {f.isPath && (
-                    <button onClick={() => vscode.postMessage({ type: "ui:pickFolder", field: f.name })}>Browse…</button>
-                  )}
-                </div>
-                {f.description && (
-                  <div className="gl-help" style={{ marginLeft: 128, marginTop: 2 }}>{f.description}</div>
-                )}
-              </div>
-            ))}
-          </div>
-        ) : (
-          <input
-            style={{ marginTop: 8, width: "100%" }}
-            value={inputText}
-            onChange={(e) => setInputText(e.target.value)}
-            spellCheck={false}
-            placeholder='input JSON, e.g. {"repo_path": "…"}'
-          />
-        )}
+      {/* toolbar */}
+      <div style={{ padding: 8, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
+        <button disabled={state.running} onClick={runGraph}>▶ Run</button>
+        <span style={{ color: "#8b949e", fontSize: 12 }}>read-only{state.running ? " · running" : ""}</span>
+        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => setShowOverview((o) => !o)}>⌑ Overview</button>
       </div>
       {state.error && (
         <div style={{ padding: "8px 12px", background: "rgba(240,114,107,0.12)", borderBottom: "1px solid var(--danger)", color: "var(--danger)", fontSize: 13 }}>
           ⚠ {state.error}
         </div>
       )}
-      <div style={{ flex: 1, position: "relative", display: "flex" }}>
+
+      {/* main row: overview | canvas | inspector */}
+      <div style={{ flex: 1, position: "relative", display: "flex", minHeight: 0 }}>
         {showOverview && state.nodes.length > 0 && (
           <OverviewPanel state={state} focused={focused} onPick={focusNode} />
         )}
-        <div style={{ flex: 1, position: "relative" }}>
-        <ReactFlow
-          nodes={nodes} edges={edges} edgeTypes={edgeTypes} fitView
-          onInit={(inst) => { rf.current = inst; }}
-          onNodeClick={(_, n) => toggleBreakpoint(n.id)}
-        >
-          <Background />
-          <Controls />
-        </ReactFlow>
-        {state.nodes.length > 0 && (
-          <div style={{
-            position: "absolute", top: 10, right: 10, display: "flex", gap: 14, alignItems: "center",
-            padding: "5px 10px", borderRadius: 7, background: "var(--surface)", border: "1px solid var(--line)",
-            fontSize: 11, color: "var(--muted)", pointerEvents: "none",
-          }}>
-            <span><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--line)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />script</span>
-            <span style={{ color: "var(--accent)" }}><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--accent)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />⚡ llm / inference</span>
-            <span style={{ color: "var(--pause)" }}>— — branch</span>
-            <span style={{ color: "#e3b341" }}>↺ loop</span>
-          </div>
-        )}
-        {needsGraphSelection(state) && !state.pending && (
-          <div
-            style={{
+
+        <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
+          <ReactFlow
+            nodes={nodes} edges={edges} edgeTypes={edgeTypes} fitView
+            onInit={(inst) => { rf.current = inst; }}
+            onNodeClick={(_, n) => toggleBreakpoint(n.id)}
+          >
+            <Background />
+            <Controls />
+          </ReactFlow>
+          {state.nodes.length > 0 && (
+            <div style={{
+              position: "absolute", top: 10, right: 10, display: "flex", gap: 12, alignItems: "center",
+              padding: "5px 10px", borderRadius: 7, background: "var(--surface)", border: "1px solid var(--line)",
+              fontSize: 11, color: "var(--muted)", pointerEvents: "none",
+            }}>
+              <span><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--line)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />script</span>
+              <span style={{ color: "var(--accent)" }}><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--accent)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />⚡ llm</span>
+              <span style={{ color: "var(--pause)" }}>— — branch</span>
+              <span style={{ color: "#e3b341" }}>↺ loop</span>
+            </div>
+          )}
+          {needsGraphSelection(state) && !state.pending && (
+            <div style={{
               position: "absolute", inset: 0, display: "flex", flexDirection: "column",
               alignItems: "center", justifyContent: "center", gap: 12,
               background: "rgba(13,17,23,0.85)", textAlign: "center",
-            }}
-          >
-            <div style={{ color: "#8b949e" }}>
-              {state.error ? "Couldn't load that graph." : "No graph selected."}
+            }}>
+              <div style={{ color: "#8b949e" }}>{state.error ? "Couldn't load that graph." : "No graph selected."}</div>
+              <button style={{ padding: "8px 16px", fontSize: 14, cursor: "pointer" }}
+                onClick={() => vscode.postMessage({ type: "ui:selectGraph" })}>
+                Select Graph…
+              </button>
+              <div style={{ color: "#6e7681", fontSize: 12, maxWidth: 380 }}>
+                Picks a <code>build_graph()</code> in your project — no settings to edit.
+              </div>
             </div>
-            <button
-              style={{ padding: "8px 16px", fontSize: 14, cursor: "pointer" }}
-              onClick={() => vscode.postMessage({ type: "ui:selectGraph" })}
-            >
-              Select Graph…
-            </button>
-            <div style={{ color: "#6e7681", fontSize: 12, maxWidth: 380 }}>
-              Picks a <code>build_graph()</code> in your project — no settings to edit.
-            </div>
+          )}
+        </div>
+
+        {/* right inspector */}
+        <div style={{ width: 330, flex: "0 0 330px", borderLeft: "1px solid var(--line)", background: "var(--surface)", display: "flex", flexDirection: "column", minHeight: 0 }}>
+          <div style={{ display: "flex", borderBottom: "1px solid var(--line)" }}>
+            {TABS.map((t) => (
+              <button key={t.id} onClick={() => setTab(t.id)}
+                style={{
+                  flex: 1, border: "none", borderRadius: 0, background: tab === t.id ? "var(--surface-2)" : "transparent",
+                  color: tab === t.id ? "var(--text)" : "var(--muted)", padding: "7px 4px", fontSize: 12,
+                  borderBottom: tab === t.id ? "2px solid var(--node)" : "2px solid transparent",
+                }}>
+                {t.label}{t.dot ? " ●" : ""}
+              </button>
+            ))}
           </div>
-        )}
+          <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
+            {tab === "run" && (
+              <div style={{ padding: "10px 12px" }}>
+                <div style={{ display: "flex", alignItems: "center", marginBottom: 8 }}>
+                  <strong style={{ fontSize: 12 }}>Run input</strong>
+                  {state.inputSchema && (
+                    <button style={{ marginLeft: "auto", fontSize: 11 }} onClick={() => setShowRaw((r) => !r)}>
+                      {showRaw ? "Form" : "JSON"}
+                    </button>
+                  )}
+                </div>
+                {!state.inputSchema ? (
+                  <div className="gl-help">Select a graph to see its inputs.</div>
+                ) : !showRaw ? (
+                  <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+                    {formFields(state.inputSchema).map((f) => (
+                      <div key={f.name}>
+                        <label style={{ display: "block", fontSize: 12, marginBottom: 3 }} title={f.title}>{f.name}</label>
+                        <div style={{ display: "flex", gap: 6 }}>
+                          <input
+                            style={{ flex: 1, minWidth: 0 }}
+                            value={form[f.name] ?? ""}
+                            onChange={(e) => setForm({ ...form, [f.name]: e.target.value })}
+                            type={f.type === "integer" || f.type === "number" ? "number" : "text"}
+                            placeholder={f.placeholder}
+                            spellCheck={false}
+                          />
+                          {f.isPath && (
+                            <button onClick={() => vscode.postMessage({ type: "ui:pickFolder", field: f.name })}>…</button>
+                          )}
+                        </div>
+                        {f.description && <div className="gl-help" style={{ marginTop: 2 }}>{f.description}</div>}
+                      </div>
+                    ))}
+                  </div>
+                ) : (
+                  <textarea
+                    style={{ width: "100%", minHeight: 120 }}
+                    value={inputText}
+                    onChange={(e) => setInputText(e.target.value)}
+                    spellCheck={false}
+                    placeholder='input JSON, e.g. {"repo_path": "…"}'
+                  />
+                )}
+              </div>
+            )}
+            {tab === "state" && (
+              state.paused
+                ? <DebugPanel paused={state.paused} snapshot={state.snapshot} />
+                : <div className="gl-help" style={{ padding: 12 }}>Not paused. Click a node on the canvas to set a breakpoint, then Run — state and diff show here.</div>
+            )}
+            {tab === "tokens" && <TokenPanel state={state} />}
+            {tab === "manual" && (
+              state.pending
+                ? <ManualPanel pending={state.pending} />
+                : <div className="gl-help" style={{ padding: 12 }}>No pending manual inference. When a node calls interrupt(), its prompt appears here to copy → answer → resume.</div>
+            )}
+          </div>
         </div>
       </div>
-      <TokenPanel state={state} />
-      {state.pending && <ManualPanel pending={state.pending} />}
-      {state.paused && !state.pending && <DebugPanel paused={state.paused} snapshot={state.snapshot} />}
     </div>
   );
 }

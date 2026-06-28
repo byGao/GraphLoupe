@@ -185,6 +185,16 @@ export function tokenSummary(state: CanvasState): TokenSummary {
   };
 }
 
+export type InspectorTab = "run" | "state" | "tokens" | "manual";
+
+/** Which inspector tab to surface: a manual-inference pause jumps to Manual, a
+ *  breakpoint pause to State; otherwise keep whatever tab the user is on. */
+export function autoTab(state: CanvasState, current: InspectorTab): InspectorTab {
+  if (state.pending) return "manual";
+  if (state.paused) return "state";
+  return current;
+}
+
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
     case "graph": {
