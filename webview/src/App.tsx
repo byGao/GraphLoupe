@@ -1,7 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ReactFlow, BaseEdge, Background, Controls, MarkerType, Position,
-  useNodesState, useEdgesState,
+  useNodesState,
   type Node, type Edge, type EdgeProps, type EdgeTypes, type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -436,14 +436,13 @@ export default function App() {
     });
   }, [state.edges, state.edgeLabels, layout.routes, positions]);
 
-  // React Flow v12 is controlled: feed it through useNodesState/useEdgesState with
-  // change handlers. Passing `nodes` without onNodesChange desyncs RF's internal
-  // store after measurements/fitView and can drop nodes (the "nodes vanish on Step"
-  // bug). We re-sync RF's state whenever our derived nodes/edges change.
+  // React Flow v12: NODES are controlled via useNodesState + onNodesChange —
+  // passing `nodes` without a handler desyncs RF's store after measurement/fitView
+  // and drops nodes (the "nodes vanish" bug). EDGES stay a plain prop: they're
+  // drawn by our OrthEdge from ELK route points, and routing them through
+  // useEdgesState made RF skip them while nodes re-measured (edges vanished).
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
-  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
   useEffect(() => { setRfNodes(nodes); }, [nodes, setRfNodes]);
-  useEffect(() => { setRfEdges(edges); }, [edges, setRfEdges]);
 
   const runGraph = () =>
     state.inputSchema && !showRaw
@@ -462,6 +461,11 @@ export default function App() {
       {/* toolbar */}
       <div style={{ padding: 8, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
         <button disabled={state.running} onClick={runGraph}>▶ Run</button>
+        {(state.running || state.paused || state.pending) && (
+          <button onClick={() => vscode.postMessage({ type: "ui:restart" })}
+            title="Abort the current run (reloads the graph)"
+            style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>■ Stop</button>
+        )}
         <span style={{ color: "#8b949e", fontSize: 12 }}>read-only{state.running ? " · running" : ""}</span>
         <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => vscode.postMessage({ type: "ui:selectGraph" })}>⇄ Graph</button>
         <button style={{ fontSize: 12 }} onClick={() => setShowOverview((o) => !o)}>⌑ Overview</button>
@@ -480,8 +484,8 @@ export default function App() {
 
         <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
           <ReactFlow
-            nodes={rfNodes} edges={rfEdges} edgeTypes={edgeTypes} fitView
-            onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
+            nodes={rfNodes} edges={edges} edgeTypes={edgeTypes} fitView
+            onNodesChange={onNodesChange}
             onInit={(inst) => { rf.current = inst; }}
             onNodeClick={(_, n) => toggleBreakpoint(n.id)}
           >

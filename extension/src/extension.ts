@@ -223,6 +223,11 @@ export function activate(context: vscode.ExtensionContext): void {
             void pickFolder(msg.field).catch((err) => console.error("[graphloupe] pickFolder", err));
             return;
           }
+          if (msg && msg.type === "ui:restart") {  // Stop: abort the run by restarting the sidecar
+            void Promise.resolve(vscode.commands.executeCommand("graphloupe.restartSidecar"))
+              .then(undefined, (err) => console.error("[graphloupe] restart", err));
+            return;
+          }
           try {
             socket?.send(JSON.stringify(msg));
           } catch (err) {
