@@ -486,11 +486,12 @@ export default function App() {
           <ReactFlow
             nodes={rfNodes} edges={edges} edgeTypes={edgeTypes} fitView
             onNodesChange={onNodesChange}
+            nodesDraggable={false} nodesConnectable={false} edgesFocusable={false}
             onInit={(inst) => { rf.current = inst; }}
             onNodeClick={(_, n) => toggleBreakpoint(n.id)}
           >
             <Background />
-            <Controls />
+            <Controls showInteractive={false} />
           </ReactFlow>
           {state.nodes.length > 0 && (
             <div style={{
