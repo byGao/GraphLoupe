@@ -139,13 +139,16 @@ npm run package        # build a .vsix
 3. In the dev window: **Ctrl/Cmd+Shift+P → "GraphLoupe: Open Graph Panel"**.
 4. Set the graph entry to **`graphloupe_sidecar.graph:showcase_graph`** (Select Graph,
    or `graphloupe.graphEntry` in settings) — a graph that exercises *every* feature.
-5. You should immediately see (no run needed): two lanes with headers — **⚙ script**
-   (`ingest`, `gate`) and **⚡ llm / inference** (`plan`, `review`, `synthesize`) —
-   laid out top-to-bottom with arrows, a branch from `gate`, and a left **overview**
-   table (click a row to center that node).
-6. Click **▶ Run**. Nodes light up; at `review` the **Manual inference** panel opens
-   (paste any answer → Send resume); when it finishes the **Token economy** panel
-   shows per-node prompt/completion for `plan` and `synthesize`.
+5. You should immediately see (no run needed): the graph auto-laid-out top-to-bottom,
+   nodes coloured by kind (**⚡ llm** `plan`/`review`/`synthesize` vs script
+   `ingest`/`gate`), a 3-way conditional from `gate` with a loop back to `plan`, a
+   left **overview** (click a row to focus that node) and a right **Inspector**
+   (Input / State / Tokens / Manual tabs).
+6. Click **▶ Run**. Nodes light up; at `review` the **Manual** tab opens with the
+   prompt — **your answer steers the flow**: type `redo` to re-plan (loops back to
+   `plan`), `abort` to stop, or anything else to proceed. Set a breakpoint (click a
+   node) to pause in the **State** tab; after a run the **Tokens** tab shows per-node
+   prompt/completion.
 
 > The simpler `graphloupe_sidecar.graph:build_graph` (prepare → llm) and
 > `…:manual_demo` are also available if you want a minimal graph.

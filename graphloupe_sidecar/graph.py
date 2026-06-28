@@ -127,22 +127,27 @@ def manual_demo():
 def build_showcase(step_delay: float = 0.0):
     """Feature-showcase graph: exercises every GraphLoupe capability in one run.
 
-    Shape (a branch, not a line, so order + routing are visible)::
+    Shape — the human decision at ``review`` steers the routing, so redo/manual are
+    interactive (paste an answer to drive the flow), not auto-played::
 
-        __start__ -> ingest -> plan -> gate --(needs human)--> review -> synthesize -> __end__
-                                          \\--(auto)-----------------------/
+        __start__ -> ingest -> plan -> review(manual) -> gate
+                                ^                          |-- "redo"    --> plan  (loop)
+                                |--------------------------|-- "abort"   --> __end__
+                                                           |-- approve   --> synthesize -> __end__
 
     What each capability sees here:
       - visualization + lanes: ``ingest``/``gate`` are script; ``plan``/``synthesize``
         reference a chat model (closure) -> llm lane; ``review`` calls interrupt()
-        -> llm/inference lane. The conditional edge from ``gate`` shows branching.
-      - token economy: ``plan`` and ``synthesize`` each invoke the model -> two rows.
+        -> llm/inference lane. ``gate`` is a 3-way conditional with a loop back to plan.
+      - token economy: ``plan`` and ``synthesize`` each invoke the model.
       - step debugging: compiled with a checkpointer, so breakpoints / step / fork work.
-      - manual inference: ``review`` pauses via interrupt() for a human decision.
+      - manual inference: ``review`` pauses for YOUR answer, which ``gate`` routes on —
+        type "redo" to re-plan (loop), "abort" to stop, anything else to proceed.
       - overview: every node has a docstring first line (shown as its purpose).
     """
     model = FakeMessagesListChatModel(
-        responses=[AIMessage(content="1. scan 2. group 3. summarize"),
+        responses=[AIMessage(content="Plan: 1. scan 2. group 3. summarize"),
+                   AIMessage(content="Revised plan: 1. scan 2. cluster 3. critique 4. summarize"),
                    AIMessage(content="Done: 3 modules, 1 risk flagged.")],
     )
 
@@ -162,32 +167,38 @@ def build_showcase(step_delay: float = 0.0):
         reply = await model.ainvoke(state.get("messages") or [])
         return {"messages": [reply], "steps": state.get("steps", 0) + 1}
 
-    def gate(state: State) -> dict[str, Any]:
-        """Confidence gate (script): 3-way switch over the plan's confidence."""
-        return {}
-
-    def route(state: State) -> str:
-        # a 3-way switch that also loops: re-plan once, then a human pass, then exit.
-        # bounded by 'steps' so the demo always terminates.
-        s = state.get("steps", 0)
-        if s < 3:
-            return "redo"    # loop back to plan (re-plan)
-        if s < 4:
-            return "human"   # route to manual review
-        return "auto"        # straight to synthesis
-
     def review(state: State) -> dict[str, Any]:
-        """Pause for a human decision on the plan (manual inference via interrupt())."""
-        msgs = state.get("messages") or [AIMessage(content="(plan)")]
-        rendered = "\n".join(f"{getattr(m, 'type', 'human')}: {m.content}" for m in msgs)
+        """Pause for YOUR decision on the plan (manual inference via interrupt())."""
+        plan_text = ""
+        for m in reversed(state.get("messages") or []):
+            if getattr(m, "type", "") == "ai":
+                plan_text = str(m.content)
+                break
+        rendered = (f"Review this plan:\n\n{plan_text or '(no plan)'}\n\n"
+                    "Reply 'redo' to re-plan, 'abort' to stop, or anything else to proceed.")
         answer = interrupt({  # direct interrupt() so the lane is classified statically
             "renderedText": rendered,
             "messages": [{"role": "human", "content": rendered, "name": None, "toolCallId": None}],
             "expects": "text", "toolSchema": None,
-            "promptTokens": {"prompt": _estimate_tokens(msgs), "completion": None,
-                             "source": "sidecar_estimate"},
+            "promptTokens": {"prompt": _estimate_tokens(state.get("messages") or []),
+                             "completion": None, "source": "sidecar_estimate"},
         })
-        return {"messages": [HumanMessage(content=str(answer))], "steps": state.get("steps", 0) + 1}
+        return {"messages": [HumanMessage(content=str(answer))]}
+
+    def gate(state: State) -> dict[str, Any]:
+        """Confidence gate (script): route on the human's review decision."""
+        return {}
+
+    def route(state: State) -> str:
+        # the human's last reply steers the flow; 'steps' caps the redo loop so a
+        # scripted "redo" can't loop forever.
+        msgs = state.get("messages") or []
+        last = str(msgs[-1].content).lower() if msgs else ""
+        if "abort" in last or "stop" in last:
+            return "abort"
+        if "redo" in last and state.get("steps", 0) < 6:
+            return "redo"   # loop back to plan (re-plan)
+        return "approve"    # proceed to synthesis
 
     async def synthesize(state: State) -> dict[str, Any]:
         """Summarize the outcome with the model (LLM node; second token-economy row)."""
@@ -204,10 +215,10 @@ def build_showcase(step_delay: float = 0.0):
     g.add_node("synthesize", synthesize)
     g.add_edge(START, "ingest")
     g.add_edge("ingest", "plan")
-    g.add_edge("plan", "gate")
-    # 3-way switch + a loop: redo -> plan (cycle), human -> review, auto -> synthesize
-    g.add_conditional_edges("gate", route, {"redo": "plan", "human": "review", "auto": "synthesize"})
-    g.add_edge("review", "synthesize")
+    g.add_edge("plan", "review")
+    g.add_edge("review", "gate")
+    # the human's answer at review steers a 3-way switch (with a loop back to plan)
+    g.add_conditional_edges("gate", route, {"redo": "plan", "abort": END, "approve": "synthesize"})
     g.add_edge("synthesize", END)
     return g.compile(checkpointer=MemorySaver())
 
