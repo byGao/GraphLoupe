@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
+import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ReactFlow, BaseEdge, Background, Controls, MarkerType, Position,
   type Node, type Edge, type EdgeProps, type EdgeTypes, type ReactFlowInstance,
@@ -145,8 +145,13 @@ function ManualPanel({ pending }: { pending: ManualRequest }) {
  *  (graphs with no LLM node simply show nothing). */
 function TokenPanel({ state }: { state: CanvasState }) {
   const s = useMemo(() => tokenSummary(state), [state]);
+  const [open, setOpen] = useState<string | null>(null);
   const num: CSSProperties = { textAlign: "right", padding: "2px 8px", fontFamily: "var(--mono)" };
   const head: CSSProperties = { ...num, color: "var(--muted)", fontWeight: 400 };
+  const detail: CSSProperties = {
+    background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 6,
+    fontSize: 11, whiteSpace: "pre-wrap", maxHeight: 160, overflow: "auto", margin: "2px 0", userSelect: "text",
+  };
   if (s.rows.length === 0) {
     return <div className="gl-help" style={{ padding: "12px" }}>No LLM calls yet — run a graph with an LLM node to see per-node token economy.</div>;
   }
@@ -169,17 +174,34 @@ function TokenPanel({ state }: { state: CanvasState }) {
             </tr>
           </thead>
           <tbody>
-            {s.rows.map((r) => (
-              <tr key={r.node}>
-                <td style={{ padding: "2px 8px", fontFamily: "var(--mono)", color: r.node === s.heaviest ? "var(--pause)" : "var(--text)" }}>
-                  {r.node}{r.estimated ? " ~" : ""}
-                </td>
-                <td style={num}>{r.calls}</td>
-                <td style={num}>{r.prompt}</td>
-                <td style={num}>{r.completion}</td>
-                <td style={{ ...num, color: "var(--node)" }}>{r.prompt + r.completion}</td>
-              </tr>
-            ))}
+            {s.rows.map((r) => {
+              const hasText = !!(r.lastPrompt || r.lastResponse);
+              const isOpen = open === r.node;
+              return (
+                <Fragment key={r.node}>
+                  <tr style={{ cursor: hasText ? "pointer" : "default" }}
+                    onClick={() => hasText && setOpen(isOpen ? null : r.node)}>
+                    <td style={{ padding: "2px 8px", fontFamily: "var(--mono)", color: r.node === s.heaviest ? "var(--pause)" : "var(--text)" }}>
+                      {hasText ? (isOpen ? "▾ " : "▸ ") : ""}{r.node}{r.estimated ? " ~" : ""}
+                    </td>
+                    <td style={num}>{r.calls}</td>
+                    <td style={num}>{r.prompt}</td>
+                    <td style={num}>{r.completion}</td>
+                    <td style={{ ...num, color: "var(--node)" }}>{r.prompt + r.completion}</td>
+                  </tr>
+                  {isOpen && (
+                    <tr>
+                      <td colSpan={5} style={{ padding: "2px 8px" }}>
+                        <div className="gl-help">prompt (last call)</div>
+                        <div style={detail}>{r.lastPrompt || "—"}</div>
+                        <div className="gl-help">response</div>
+                        <div style={detail}>{r.lastResponse || "—"}</div>
+                      </td>
+                    </tr>
+                  )}
+                </Fragment>
+              );
+            })}
             <tr style={{ borderTop: "1px solid var(--line)" }}>
               <td style={{ padding: "3px 8px", color: "var(--muted)" }}>run 累計</td>
               <td style={{ ...num, color: "var(--muted)" }}>{s.total.calls}</td>

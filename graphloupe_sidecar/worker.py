@@ -234,6 +234,11 @@ def _text_of(content: Any) -> str:
     return str(content)
 
 
+def _clip(text: str, limit: int = 4000) -> str:
+    """Cap prompt/response text so a huge context doesn't bloat the event stream."""
+    return text if len(text) <= limit else text[:limit] + f"\n…(+{len(text) - limit} chars)"
+
+
 def _llm_event(ev: dict[str, Any], thread_id: str, run_id: str) -> str | None:
     """Translate an astream_events chat-model event into an LlmStart/LlmEnd line.
     PIN: the node is metadata.langgraph_node (ev.name is the model class). P8: fall
@@ -247,22 +252,26 @@ def _llm_event(ev: dict[str, Any], thread_id: str, run_id: str) -> str | None:
             return None
         inp = data.get("input")
         msgs = inp.get("messages") if isinstance(inp, dict) else inp
-        prompt = _estimate_tokens(_text_of(msgs))
+        text = _text_of(msgs)
         return P.LlmStart(
             threadId=thread_id, runId=run_id, node=node, llmEventId=ev["run_id"],
             model=md.get("ls_model_type") or ev.get("name"),
-            promptTokens=P.TokenCount(prompt=prompt, completion=None, source="sidecar_estimate"),
+            promptTokens=P.TokenCount(prompt=_estimate_tokens(text), completion=None,
+                                      source="sidecar_estimate"),
+            promptText=_clip(text),  # the actual prompt sent to the model
         ).model_dump_json()
     # on_chat_model_end
     out = data.get("output")
     usage = getattr(out, "usage_metadata", None)
+    out_text = _text_of(out)
     if usage:
         tokens = P.TokenCount(prompt=int(usage.get("input_tokens") or 0),
                               completion=usage.get("output_tokens"), source="api_usage")
     else:
-        tokens = P.TokenCount(prompt=0, completion=_estimate_tokens(_text_of(out)),
+        tokens = P.TokenCount(prompt=0, completion=_estimate_tokens(out_text),
                               source="sidecar_estimate")
     return P.LlmEnd(llmEventId=ev["run_id"], tokens=tokens,
+                    completionText=_clip(out_text),  # the model's response
                     finishReason=getattr(out, "response_metadata", {}).get("finish_reason")
                     if out is not None else None).model_dump_json()
 

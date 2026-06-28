@@ -134,6 +134,17 @@ describe("canvas reducer", () => {
     expect(tokenSummary(s).rows).toEqual([]);
   });
 
+  it("token economy: carries the last call's prompt/response text per node", () => {
+    let s = reduce(initialState, ev({ type: "run_started" }));
+    s = reduce(s, ev({ type: "llm_start", threadId: "t", runId: "t", node: "plan", llmEventId: "a",
+      model: "m", promptTokens: { prompt: 10, completion: null, source: "sidecar_estimate" }, promptText: "Analyze repo" }));
+    s = reduce(s, ev({ type: "llm_end", llmEventId: "a",
+      tokens: { prompt: 0, completion: 5, source: "sidecar_estimate" }, finishReason: null, completionText: "Plan: scan" }));
+    const row = tokenSummary(s).rows[0];
+    expect(row.lastPrompt).toBe("Analyze repo");
+    expect(row.lastResponse).toBe("Plan: scan");
+  });
+
   it("token economy: api_usage end overrides the start estimate and is not flagged estimated", () => {
     let s = reduce(initialState, ev({ type: "run_started" }));
     s = reduce(s, ev({ type: "llm_start", threadId: "t", runId: "t", node: "llm", llmEventId: "a",

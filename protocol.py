@@ -146,6 +146,8 @@ class LlmStart(Envelope):
     # ls_model_type / ls_provider (pin_dump.golden.txt).
     model: str | None = None
     promptTokens: TokenCount | None = None
+    # The actual prompt text sent to the model (clipped). Added llm-prompt-view.
+    promptText: str | None = None
 
 
 class LlmToken(Envelope):
@@ -159,6 +161,8 @@ class LlmEnd(Envelope):
     llmEventId: str
     tokens: TokenCount | None = None
     finishReason: str | None = None
+    # The model's response text (clipped). Added llm-prompt-view.
+    completionText: str | None = None
 
 
 class ToolStart(Envelope):

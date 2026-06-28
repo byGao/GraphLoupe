@@ -17,8 +17,11 @@ export interface ManualRequest {
 
 /** Per-node token tally for the economy panel (PHASE 4). `estimated` is true if any
  *  measurement fell back to a sidecar estimate (no provider usage_metadata, P8). */
-export interface NodeTokens { node: string; calls: number; prompt: number; completion: number; estimated: boolean }
-interface PendingLlm { node: string; prompt: number }
+export interface NodeTokens {
+  node: string; calls: number; prompt: number; completion: number; estimated: boolean;
+  lastPrompt?: string; lastResponse?: string;  // text of the most recent call, for the expandable view
+}
+interface PendingLlm { node: string; prompt: number; promptText?: string }
 
 export interface DiffEntry { channel: string; op: string; before?: unknown; after?: unknown }
 export interface Snapshot { values: Record<string, unknown>; diff: DiffEntry[] }
@@ -217,7 +220,7 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
       // observing a chat-model call marks this node as inference (persists across runs).
       return { ...state, nodeKinds: { ...state.nodeKinds, [ev.node]: "llm" },
         llmPending: { ...state.llmPending,
-          [ev.llmEventId]: { node: ev.node, prompt: ev.promptTokens?.prompt ?? 0 } } };
+          [ev.llmEventId]: { node: ev.node, prompt: ev.promptTokens?.prompt ?? 0, promptText: ev.promptText ?? undefined } } };
     case "llm_end": {
       const p = state.llmPending[ev.llmEventId];
       if (!p) return state;  // end without a matching start: ignore
@@ -232,6 +235,8 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
           node: p.node, calls: prev.calls + 1,
           prompt: prev.prompt + prompt, completion: prev.completion + completion,
           estimated: prev.estimated || !apiUsage,
+          lastPrompt: p.promptText ?? prev.lastPrompt,        // text of the latest call
+          lastResponse: ev.completionText ?? prev.lastResponse,
         } },
         llmPending: rest };
     }

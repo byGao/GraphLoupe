@@ -85,6 +85,7 @@ export const LlmStart = z.object({
   ...env, type: z.literal("llm_start"),
   threadId: z.string(), runId: z.string(), node: z.string(), llmEventId: z.string(),
   model: z.string().nullable(), promptTokens: TokenCount.nullable(),
+  promptText: z.string().nullable().default(null),
 });
 export const LlmToken = z.object({
   ...env, type: z.literal("llm_token"), llmEventId: z.string(), delta: z.string(),
@@ -92,6 +93,7 @@ export const LlmToken = z.object({
 export const LlmEnd = z.object({
   ...env, type: z.literal("llm_end"), llmEventId: z.string(),
   tokens: TokenCount.nullable(), finishReason: z.string().nullable(),
+  completionText: z.string().nullable().default(null),
 });
 export const ToolStart = z.object({
   ...env, type: z.literal("tool_start"),
