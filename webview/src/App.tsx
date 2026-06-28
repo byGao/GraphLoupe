@@ -1,6 +1,7 @@
 import { Fragment, useEffect, useMemo, useRef, useState, type CSSProperties } from "react";
 import {
   ReactFlow, BaseEdge, Background, Controls, MarkerType, Position,
+  useNodesState, useEdgesState,
   type Node, type Edge, type EdgeProps, type EdgeTypes, type ReactFlowInstance,
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
@@ -435,6 +436,15 @@ export default function App() {
     });
   }, [state.edges, state.edgeLabels, layout.routes, positions]);
 
+  // React Flow v12 is controlled: feed it through useNodesState/useEdgesState with
+  // change handlers. Passing `nodes` without onNodesChange desyncs RF's internal
+  // store after measurements/fitView and can drop nodes (the "nodes vanish on Step"
+  // bug). We re-sync RF's state whenever our derived nodes/edges change.
+  const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
+  const [rfEdges, setRfEdges, onEdgesChange] = useEdgesState<Edge>([]);
+  useEffect(() => { setRfNodes(nodes); }, [nodes, setRfNodes]);
+  useEffect(() => { setRfEdges(edges); }, [edges, setRfEdges]);
+
   const runGraph = () =>
     state.inputSchema && !showRaw
       ? sendRunObject(buildInput(state.inputSchema, form))
@@ -470,7 +480,8 @@ export default function App() {
 
         <div style={{ flex: 1, position: "relative", minWidth: 0 }}>
           <ReactFlow
-            nodes={nodes} edges={edges} edgeTypes={edgeTypes} fitView
+            nodes={rfNodes} edges={rfEdges} edgeTypes={edgeTypes} fitView
+            onNodesChange={onNodesChange} onEdgesChange={onEdgesChange}
             onInit={(inst) => { rf.current = inst; }}
             onNodeClick={(_, n) => toggleBreakpoint(n.id)}
           >
