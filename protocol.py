@@ -217,7 +217,7 @@ class RunFinished(Envelope):
     type: Literal["run_finished"] = "run_finished"
     threadId: ThreadId
     runId: RunId
-    status: Literal["completed", "interrupted", "error"]
+    status: Literal["completed", "interrupted", "error", "aborted"]
     checkpointId: CheckpointId | None = None
 
 

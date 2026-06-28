@@ -257,7 +257,13 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
     case "state_snapshot":
       return { ...state, snapshot: { values: ev.snapshot.values, diff: ev.snapshot.diff ?? [] } };
     case "node_end":
-      return { ...state, active: state.active === ev.node ? null : state.active };
+      // record each node boundary so "◀ Back" can fork from the previous node
+      // even when no breakpoint was set there
+      return {
+        ...state,
+        active: state.active === ev.node ? null : state.active,
+        checkpoints: [ev.checkpointId, ...state.checkpoints.filter((c) => c !== ev.checkpointId)],
+      };
     case "manual_inference_required":
       return {
         ...state,

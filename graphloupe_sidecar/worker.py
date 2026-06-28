@@ -209,6 +209,10 @@ def _validate_resume(
 
 
 _SHUTDOWN = object()
+_ABORT = object()
+# set by the stdin reader on an "abort" command; checked mid-stream so a run can be
+# cancelled cleanly (no sidecar restart) even while a node is streaming.
+_abort = {"on": False}
 
 
 def _estimate_tokens(text: str) -> int:
@@ -306,6 +310,8 @@ async def _stream(graph: Any, nodes: set[str], source: Any, thread_id: str,
     if after:
         kwargs["interrupt_after"] = after
     async for ev in graph.astream_events(source, version="v2", config=cfg, **kwargs):
+        if _abort["on"]:
+            return  # cancelled mid-stream; _run emits run_finished(aborted)
         _emit_event(ev, nodes, thread_id, thread_id)
 
 
@@ -333,6 +339,8 @@ async def _await_resume(cmd_q: "asyncio.Queue[str | None]", intr_value: dict[str
         cmd = await _next_cmd(cmd_q, breakpoints)
         if cmd is None:
             return _SHUTDOWN
+        if cmd.get("cmd") == "abort":
+            return _ABORT
         if cmd.get("cmd") != "resume":
             continue
         resume_value, err = _validate_resume(intr_value, cmd.get("payload") or {})
@@ -376,6 +384,8 @@ async def _await_debug(cmd_q: "asyncio.Queue[str | None]", graph: Any, nodes: se
         if cmd is None:
             return "shutdown"
         kind = cmd.get("cmd")
+        if kind == "abort":
+            return "abort"
         if kind == "step":
             return "step"
         if kind in ("run", "resume"):  # ▶ Run / resume while paused = continue to next bp
@@ -390,8 +400,16 @@ async def _await_debug(cmd_q: "asyncio.Queue[str | None]", graph: Any, nodes: se
 
 async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
                cmd_q: "asyncio.Queue[str | None]", breakpoints: set[tuple[str, str]]) -> None:
+    _abort["on"] = False
     _emit(P.RunStarted(threadId=thread_id, runId=thread_id).model_dump_json())
     cfg = {"configurable": {"thread_id": thread_id}}
+
+    def _aborted() -> bool:
+        if not _abort["on"]:
+            return False
+        _abort["on"] = False
+        _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="aborted").model_dump_json())
+        return True
     # interrupt/breakpoints/time-travel need a checkpointer; a graph compiled without one
     # can't pause, so just stream it to completion.
     has_checkpointer = getattr(graph, "checkpointer", None) is not None
@@ -405,6 +423,8 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
             bp_before, after = _bp_lists(breakpoints)
             before = sorted(nodes) if step_mode else bp_before
         await _stream(graph, nodes, source, thread_id, before, after)
+        if _aborted():
+            return
         step_mode = False
         state = graph.get_state(cfg) if has_checkpointer else None
         if state is None or not state.next:
@@ -416,6 +436,9 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
             _emit(_manual_required(thread_id, node, intr_id, val))
             outcome = await _await_resume(cmd_q, val, node, breakpoints)
             if outcome is _SHUTDOWN:
+                return
+            if outcome is _ABORT:
+                _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="aborted").model_dump_json())
                 return
             source = outcome
             continue
@@ -429,6 +452,9 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
         action = await _await_debug(cmd_q, graph, nodes, thread_id, cfg, breakpoints, prev)
         if action == "shutdown":
             return
+        if action == "abort":
+            _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="aborted").model_dump_json())
+            return
         step_mode = action == "step"
         source = None
 
@@ -441,6 +467,11 @@ async def _amain(graph: Any, nodes: set[str]) -> None:
         for line in sys.stdin:
             stripped = line.strip()
             if stripped:
+                try:  # surface an abort immediately (mid-stream), not just via the queue
+                    if json.loads(stripped).get("cmd") == "abort":
+                        _abort["on"] = True
+                except (ValueError, AttributeError):
+                    pass
                 loop.call_soon_threadsafe(cmd_q.put_nowait, stripped)
         loop.call_soon_threadsafe(cmd_q.put_nowait, None)
 

@@ -55,14 +55,20 @@ function postCmd(msg: Record<string, unknown>): void {
   vscode.postMessage({ v: "0.1.0", corr: null, ...msg });
 }
 
-function DebugPanel({ paused, snapshot }: { paused: Paused; snapshot: Snapshot | null }) {
+function DebugPanel(
+  { paused, snapshot, checkpoints }: { paused: Paused; snapshot: Snapshot | null; checkpoints: string[] },
+) {
   const [override, setOverride] = useState("");
+  const prevCheckpoint = checkpoints[1];  // [0] is the current pause; [1] is the previous node
   return (
     <div style={{ padding: "10px 12px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
         <strong style={{ color: "var(--pause)" }}>‖ paused @ {paused.node}</strong>
         <span style={{ color: "#6e7681", fontSize: 12 }}>checkpoint {paused.checkpointId.slice(0, 8)}</span>
-        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
+        <button style={{ marginLeft: "auto", fontSize: 12 }} disabled={!prevCheckpoint}
+          title={prevCheckpoint ? "Re-run from the previous node" : "no earlier checkpoint"}
+          onClick={() => prevCheckpoint && postCmd({ type: "fork", threadId: "run", checkpointId: prevCheckpoint })}>◀ Back</button>
+        <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
         <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -462,8 +468,8 @@ export default function App() {
       <div style={{ padding: 8, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
         <button disabled={state.running} onClick={runGraph}>▶ Run</button>
         {(state.running || state.paused || state.pending) && (
-          <button onClick={() => vscode.postMessage({ type: "ui:restart" })}
-            title="Abort the current run (reloads the graph)"
+          <button onClick={() => postCmd({ type: "cancel", threadId: "run", runId: "run" })}
+            title="Abort the current run (keeps the graph loaded)"
             style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>■ Stop</button>
         )}
         <span style={{ color: "#8b949e", fontSize: 12 }}>read-only{state.running ? " · running" : ""}</span>
@@ -586,7 +592,7 @@ export default function App() {
             )}
             {tab === "state" && (
               state.paused
-                ? <DebugPanel paused={state.paused} snapshot={state.snapshot} />
+                ? <DebugPanel paused={state.paused} snapshot={state.snapshot} checkpoints={state.checkpoints} />
                 : <div className="gl-help" style={{ padding: 12 }}>Not paused. Click a node on the canvas to set a breakpoint, then Run — state and diff show here.</div>
             )}
             {tab === "tokens" && <TokenPanel state={state} />}

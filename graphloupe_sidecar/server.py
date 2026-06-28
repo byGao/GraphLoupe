@@ -74,6 +74,8 @@ def _to_worker(cmd: P.ClientCommand) -> dict[str, Any] | None:
         return {"cmd": "get_state", "checkpointId": cmd.checkpointId}
     if isinstance(cmd, P.Fork):
         return {"cmd": "fork", "checkpointId": cmd.checkpointId, "stateOverride": cmd.stateOverride}
+    if isinstance(cmd, P.Cancel):
+        return {"cmd": "abort"}
     return None
 
 

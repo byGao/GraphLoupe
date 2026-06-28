@@ -121,7 +121,7 @@ export const StateSnapshotEvent = z.object({
 export const RunFinished = z.object({
   ...env, type: z.literal("run_finished"),
   threadId: z.string(), runId: z.string(),
-  status: z.enum(["completed", "interrupted", "error"]), checkpointId: z.string().nullable(),
+  status: z.enum(["completed", "interrupted", "error", "aborted"]), checkpointId: z.string().nullable(),
 });
 export const ErrorEvent = z.object({
   ...env, type: z.literal("error"), code: ErrorCode, message: z.string(),
