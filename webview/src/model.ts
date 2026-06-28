@@ -208,9 +208,13 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
       for (const [n, k] of Object.entries(ev.nodeKinds ?? {})) {
         if (k === "llm" || k === "manual") seededKinds[n] = k;
       }
+      // a (re)loaded topology is a clean slate — also clear any run state so that
+      // restarting the sidecar (e.g. ■ Stop) doesn't leave the UI stuck "running".
       return { ...state, nodes: ev.nodes, edges: ev.edges, error: null,
         inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null,
-        nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds, edgeLabels: ev.edgeLabels ?? {} };
+        nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds, edgeLabels: ev.edgeLabels ?? {},
+        running: false, active: null, paused: null, pending: null, snapshot: null,
+        tokens: {}, llmPending: {}, checkpoints: [] };
     }
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null,
