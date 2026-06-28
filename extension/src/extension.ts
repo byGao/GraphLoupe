@@ -12,12 +12,32 @@ import { ChildProcess, spawn } from "node:child_process";
 import { AddressInfo, createServer } from "node:net";
 import WebSocket from "ws";
 import { parseServerEvent } from "../../protocol";
+import {
+  initialStatus, nextStatus, statusLabel, spawnErrorMessage,
+  type SidecarStatus, type SidecarEvent,
+} from "./sidecarStatus";
 
 interface GraphEntry { entry: string; file: string; line: number }
 
 let sidecar: ChildProcess | undefined;
 let socket: WebSocket | undefined;
 let panel: vscode.WebviewPanel | undefined;
+let statusBar: vscode.StatusBarItem | undefined;
+let status: SidecarStatus = initialStatus;
+const expectedKills = new WeakSet<ChildProcess>();  // children we asked to stop
+let stderrTail: string[] = [];
+
+/** Advance the lifecycle status and reflect it in the status bar. */
+function setStatus(ev: SidecarEvent): void {
+  status = nextStatus(status, ev);
+  if (!statusBar) return;
+  const label = statusLabel(status);
+  statusBar.text = label.text;
+  statusBar.tooltip = label.tooltip;
+  statusBar.backgroundColor = label.warn
+    ? new vscode.ThemeColor("statusBarItem.warningBackground")
+    : undefined;
+}
 
 function resolveProjectRoot(): string {
   const cfg = vscode.workspace.getConfiguration("graphloupe");
@@ -107,8 +127,11 @@ async function pickFolder(field: string): Promise<void> {
 function killSidecar(): void {
   socket?.close();
   socket = undefined;
-  if (sidecar && sidecar.exitCode === null) sidecar.kill();
-  sidecar = undefined;
+  if (sidecar && sidecar.exitCode === null) {
+    expectedKills.add(sidecar);  // so the exit handler reads this as "stopped", not a crash
+    sidecar.kill();
+  }
+  sidecar = undefined;  // status is driven by the exit handler / startSession, not here
 }
 
 /** (Re)start a session against the current panel: kill any old worker, reset the
@@ -126,23 +149,60 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
   if (entry) env.GRAPHLOUPE_GRAPH = entry;
   if (projectRoot) env.GRAPHLOUPE_PROJECT_ROOT = projectRoot;
 
+  setStatus({ t: "spawn" });
+  stderrTail = [];
   try {
     const port = await freePort();
-    sidecar = spawn("python", ["-m", "graphloupe_sidecar.server", "--port", String(port)], {
+    const child = spawn("python", ["-m", "graphloupe_sidecar.server", "--port", String(port)], {
       cwd: context.extensionPath,
       env,
     });
-    sidecar.on("error", (err) => console.error("[graphloupe] sidecar spawn", err));
-    sidecar.stderr?.on("data", (d) => console.error("[sidecar]", d.toString()));
+    sidecar = child;
+    child.on("error", (err: NodeJS.ErrnoException) => {
+      setStatus({ t: "spawnError", reason: err.code ?? err.message });
+      void vscode.window.showErrorMessage(spawnErrorMessage(err));
+    });
+    child.stderr?.on("data", (d) => {
+      const text = d.toString();
+      console.error("[sidecar]", text);
+      stderrTail.push(text);
+      if (stderrTail.length > 25) stderrTail = stderrTail.slice(-25);
+    });
+    child.on("exit", (code, signal) => {
+      if (child !== sidecar) return;               // a superseded sidecar — ignore its late exit
+      if (expectedKills.has(child)) {              // we asked it to stop
+        setStatus({ t: "exit", expected: true });
+        return;
+      }
+      const reason = `sidecar exited (${signal ?? `code ${code}`})`;
+      setStatus({ t: "exit", expected: false, reason });
+      const tail = stderrTail.join("").trim().split("\n").slice(-3).join("\n");
+      void vscode.window
+        .showErrorMessage(`GraphLoupe: ${reason}.${tail ? `\n${tail}` : ""}`, "Restart Sidecar")
+        .then((pick) => { if (pick === "Restart Sidecar") void startSession(context); });
+    });
     socket = await connect(port, (ev) => postToWebview(ev));
+    setStatus({ t: "open" });
   } catch (err) {
+    setStatus({ t: "connectFail", reason: (err as Error).message });
     vscode.window.showErrorMessage(`GraphLoupe: ${(err as Error).message}`);
     killSidecar();
   }
 }
 
 export function activate(context: vscode.ExtensionContext): void {
+  statusBar = vscode.window.createStatusBarItem(vscode.StatusBarAlignment.Right, 100);
+  statusBar.command = "graphloupe.restartSidecar";
+  context.subscriptions.push(statusBar);
+
   context.subscriptions.push(
+    vscode.commands.registerCommand("graphloupe.restartSidecar", async () => {
+      if (!panel) {
+        await vscode.commands.executeCommand("graphloupe.open");
+        return;
+      }
+      await startSession(context);
+    }),
     vscode.commands.registerCommand("graphloupe.open", async () => {
       if (panel) {
         panel.reveal();
@@ -172,8 +232,10 @@ export function activate(context: vscode.ExtensionContext): void {
         panel.onDidDispose(() => {
           killSidecar();
           panel = undefined;
+          statusBar?.hide();
         });
       }
+      statusBar?.show();
       await startSession(context);
     }),
     vscode.commands.registerCommand("graphloupe.reload", async () => {

@@ -28,6 +28,10 @@
       {
         "command": "graphloupe.selectGraph",
         "title": "GraphLoupe: Select Graph"
+      },
+      {
+        "command": "graphloupe.restartSidecar",
+        "title": "GraphLoupe: Restart Sidecar"
       }
     ],
     "configuration": {
