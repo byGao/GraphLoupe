@@ -65,28 +65,39 @@ function DebugPanel({ paused, snapshot }: { paused: Paused; snapshot: Snapshot |
         <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-        <div style={{ flex: 1 }}>
-          <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>State</div>
-          <pre style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, whiteSpace: "pre-wrap", margin: 0, maxHeight: 140, overflow: "auto" }}>
+        <div>
+          <div style={{ display: "flex", alignItems: "center", marginBottom: 2 }}>
+            <div style={{ color: "#8b949e", fontSize: 11 }}>State</div>
+            <button style={{ marginLeft: "auto", fontSize: 11 }}
+              disabled={!snapshot}
+              onClick={() => snapshot && navigator.clipboard?.writeText(JSON.stringify(snapshot.values, null, 2))}>
+              Copy
+            </button>
+          </div>
+          <pre style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, whiteSpace: "pre-wrap", margin: 0, maxHeight: 200, overflow: "auto", userSelect: "text" }}>
             {snapshot ? JSON.stringify(snapshot.values, null, 2) : "…"}
           </pre>
         </div>
-        <div style={{ flex: 1 }}>
+        <div>
           <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>Diff (last super-step)</div>
           <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, maxHeight: 80, overflow: "auto" }}>
+            {(snapshot?.diff ?? []).length === 0 && <span className="gl-help">no changes</span>}
             {(snapshot?.diff ?? []).map((d, i) => (
               <div key={i} style={{ color: d.op === "add" ? "#3fb950" : d.op === "remove" ? "#f85149" : "#d29922" }}>
                 {d.op === "add" ? "+" : d.op === "remove" ? "−" : "~"} {d.channel}
               </div>
             ))}
           </div>
-          <div style={{ marginTop: 6, display: "flex", gap: 6 }}>
-            <input
+          <div style={{ marginTop: 8 }}>
+            <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>
+              Fork from here — optional channel updates (JSON):
+            </div>
+            <textarea
               value={override} onChange={(e) => setOverride(e.target.value)} spellCheck={false}
-              placeholder='override JSON (optional)'
-              style={{ flex: 1, background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: "3px 6px", fontFamily: "monospace", fontSize: 11 }}
+              placeholder={'e.g. {"steps": 0}  — applied on top of this checkpoint\'s state'}
+              style={{ width: "100%", minHeight: 48, background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: 6, fontFamily: "monospace", fontSize: 11 }}
             />
-            <button style={{ fontSize: 12 }} onClick={() => {
+            <button style={{ marginTop: 4, fontSize: 12 }} onClick={() => {
               let stateOverride: unknown = null;
               if (override.trim()) { try { stateOverride = JSON.parse(override); } catch { stateOverride = null; } }
               postCmd({ type: "fork", threadId: "run", checkpointId: paused.checkpointId, stateOverride });
@@ -183,6 +194,13 @@ function TokenPanel({ state }: { state: CanvasState }) {
   );
 }
 
+// node-kind visuals: ⚡ llm (model/API call) vs ✋ manual (interrupt → human paste) vs script
+const KIND: Record<"llm" | "manual" | "script", { icon: string; color: string }> = {
+  llm: { icon: "⚡ ", color: "var(--accent)" },
+  manual: { icon: "✋ ", color: "var(--pause)" },
+  script: { icon: "", color: "var(--line)" },
+};
+
 const NODE_W = 190;
 /** FIXED box per node — fed to ELK *and* applied as the rendered height, so edge
  *  routes (computed for these sizes) line up with the actual node borders. The
@@ -236,11 +254,11 @@ function OverviewPanel(
           style={{
             padding: "9px 11px", borderRadius: 7, cursor: "pointer", marginBottom: 9,
             background: r.node === focused ? "rgba(108,182,255,0.16)" : "var(--surface-2)",
-            borderLeft: `3px solid ${r.kind === "llm" ? "var(--accent)" : "var(--line)"}`,
+            borderLeft: `3px solid ${KIND[r.kind].color}`,
           }}
         >
           <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: "#eaf0f7" }}>
-            {r.kind === "llm" ? "⚡ " : ""}{r.node}
+            {KIND[r.kind].icon}{r.node}
           </div>
           {r.doc && (
             <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45, color: "#b6c2d0" }}>{r.doc}</div>
@@ -341,7 +359,7 @@ export default function App() {
           label: (
             <div style={{ textAlign: "left" }}>
               <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: id === state.active ? "var(--run)" : "#eaf0f7" }}>
-                {kind === "llm" ? "⚡ " : ""}{id}
+                {KIND[kind].icon}{id}
               </div>
               {doc && (
                 <div style={{
@@ -359,7 +377,7 @@ export default function App() {
         style: {
           width: NODE_W, height: nodeSize(state, id).h, overflow: "hidden",
           textAlign: "left", padding: synthetic ? "5px 10px" : "8px 11px",
-          borderColor: kind === "llm" ? "var(--accent)" : "var(--line)",
+          borderColor: KIND[kind].color,
           ...(id === state.active ? { border: "2px solid var(--run)", background: "rgba(76,195,138,0.14)" } : {}),
           ...(id === focused ? { boxShadow: "0 0 0 2px var(--node)" } : {}),
           ...(breakpoints.has(id) ? { boxShadow: "0 0 0 2px var(--danger)" } : {}),
@@ -370,28 +388,20 @@ export default function App() {
   }, [state.nodes, state.nodeDocs, state.nodeKinds, state.active, positions, focused, breakpoints]);
 
   const edges: Edge[] = useMemo(() => {
-    // convention: forward edges flow downward (ELK orthogonal route); a back edge
-    // (target laid out above source) is a loop -> route it out the LEFT side of the
-    // source to the LEFT side of the target, so it never sits on the forward edge.
-    let loopRank = 0;
+    // ELK already routes every edge orthogonally and avoids nodes/overlaps — so we
+    // draw its route for ALL edges (a hand-rolled loop bow interfered with the
+    // other edges). A back edge (target laid out above its source) is just coloured
+    // amber + ↺ so it reads as a return path.
     return state.edges.map(([s, t], i) => {
       const key = `${s}->${t}`;
       const rawLabel = state.edgeLabels[key];
       const sp = positions[s], tp = positions[t];
       const isLoop = !!sp && !!tp && tp.y < sp.y - 1;
-      let points = layout.routes[key];
-      if (isLoop && sp && tp) {
-        const sMidY = sp.y + nodeSize(state, s).h / 2;
-        const tMidY = tp.y + nodeSize(state, t).h / 2;
-        const bowX = Math.min(sp.x, tp.x) - 36 - loopRank * 18;
-        loopRank += 1;
-        points = [{ x: sp.x, y: sMidY }, { x: bowX, y: sMidY }, { x: bowX, y: tMidY }, { x: tp.x, y: tMidY }];
-      }
       const color = isLoop ? "#e3b341" : "#6b7785";
       const label = isLoop ? `↺ ${rawLabel ?? "loop"}` : rawLabel;
       return {
         id: `e${i}`, source: s, target: t, type: "orth", label,
-        data: { points },
+        data: { points: layout.routes[key] },
         zIndex: isLoop ? 20 : 1,
         style: { stroke: color, strokeWidth: isLoop ? 2 : 1.6, strokeDasharray: rawLabel ? "6 3" : undefined },
         markerEnd: { type: MarkerType.ArrowClosed, color, width: 18, height: 18 },
@@ -417,7 +427,8 @@ export default function App() {
       <div style={{ padding: 8, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
         <button disabled={state.running} onClick={runGraph}>▶ Run</button>
         <span style={{ color: "#8b949e", fontSize: 12 }}>read-only{state.running ? " · running" : ""}</span>
-        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => setShowOverview((o) => !o)}>⌑ Overview</button>
+        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => vscode.postMessage({ type: "ui:selectGraph" })}>⇄ Graph</button>
+        <button style={{ fontSize: 12 }} onClick={() => setShowOverview((o) => !o)}>⌑ Overview</button>
       </div>
       {state.error && (
         <div style={{ padding: "8px 12px", background: "rgba(240,114,107,0.12)", borderBottom: "1px solid var(--danger)", color: "var(--danger)", fontSize: 13 }}>
@@ -448,6 +459,7 @@ export default function App() {
             }}>
               <span><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--line)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />script</span>
               <span style={{ color: "var(--accent)" }}><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--accent)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />⚡ llm</span>
+              <span style={{ color: "var(--pause)" }}><span style={{ display: "inline-block", width: 10, height: 10, border: "1px solid var(--pause)", borderRadius: 2, verticalAlign: "middle", marginRight: 5 }} />✋ manual</span>
               <span style={{ color: "var(--pause)" }}>— — branch</span>
               <span style={{ color: "#e3b341" }}>↺ loop</span>
             </div>

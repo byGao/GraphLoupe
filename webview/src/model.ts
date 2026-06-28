@@ -39,11 +39,11 @@ export interface CanvasState {
   tokens: Record<string, NodeTokens>;  // per-node token tally for the current run (PHASE 4)
   llmPending: Record<string, PendingLlm>;  // in-flight llm calls by llmEventId (start -> end)
   nodeDocs: Record<string, string | null>;  // first docstring line per node (overview)
-  nodeKinds: Record<string, "llm">;  // nodes observed to do inference (llm_start / manual); absent = script
+  nodeKinds: Record<string, "llm" | "manual">;  // llm = model/API call, manual = interrupt; absent = script
   edgeLabels: Record<string, string>;  // branch condition per conditional edge, keyed "src->tgt"
 }
 
-export type NodeKind = "llm" | "script";
+export type NodeKind = "llm" | "manual" | "script";
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
@@ -51,8 +51,9 @@ export const initialState: CanvasState = {
   tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {},
 };
 
-/** A node is "llm/inference" once observed emitting an LLM call or a manual interrupt
- *  (runtime truth — static source detection proved unreliable); otherwise "script". */
+/** Node kind: "manual" (pauses for a human paste via interrupt), "llm" (calls a
+ *  model/API), or "script". Seeded from the worker's static scan, refined by runtime
+ *  events (manual_inference_required -> manual, llm_start -> llm). */
 export function nodeKind(state: CanvasState, node: string): NodeKind {
   return state.nodeKinds[node] ?? "script";
 }
@@ -198,10 +199,12 @@ export function autoTab(state: CanvasState, current: InspectorTab): InspectorTab
 export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
   switch (ev.type) {
     case "graph": {
-      // seed lane kinds from the worker's static classification; runtime
-      // llm_start / manual events refine it. Only "llm" entries are kept (absent = script).
-      const seededKinds: Record<string, "llm"> = {};
-      for (const [n, k] of Object.entries(ev.nodeKinds ?? {})) if (k === "llm") seededKinds[n] = "llm";
+      // seed node kinds from the worker's static classification; runtime
+      // llm_start / manual events refine it. "script" is the absent default.
+      const seededKinds: Record<string, "llm" | "manual"> = {};
+      for (const [n, k] of Object.entries(ev.nodeKinds ?? {})) {
+        if (k === "llm" || k === "manual") seededKinds[n] = k;
+      }
       return { ...state, nodes: ev.nodes, edges: ev.edges, error: null,
         inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null,
         nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds, edgeLabels: ev.edgeLabels ?? {} };
@@ -249,7 +252,7 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
     case "manual_inference_required":
       return {
         ...state,
-        nodeKinds: { ...state.nodeKinds, [ev.node]: "llm" },  // manual interrupt = inference node
+        nodeKinds: { ...state.nodeKinds, [ev.node]: "manual" },  // observed a manual interrupt
         pending: {
           node: ev.node, threadId: ev.threadId ?? null, interruptId: ev.interruptId,
           renderedText: ev.renderedText, expects: ev.expects,

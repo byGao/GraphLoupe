@@ -116,16 +116,21 @@ def _edge_labels(drawable: Any) -> dict[str, str]:
 
 
 def _node_kinds(drawable: Any) -> dict[str, str]:
-    """Static best-effort lane classification: a node is "llm" (inference) if it
-    references a model instance or calls interrupt(), else "script". Runtime
-    observation (llm_start / manual_inference_required) refines this in the webview."""
+    """Static best-effort node classification: "manual" if it calls interrupt()
+    (pause for a human paste), else "llm" if it references a model instance (an API
+    call), else "script". Runtime events (llm_start / manual_inference_required)
+    refine this in the webview."""
     kinds: dict[str, str] = {}
     for name, node in getattr(drawable, "nodes", {}).items():
         if name in ("__start__", "__end__"):
             continue
         fn = _node_fn(node)
-        is_llm = callable(fn) and (_refs_a_model(fn) or _calls_interrupt(fn))
-        kinds[name] = "llm" if is_llm else "script"
+        if callable(fn) and _calls_interrupt(fn):
+            kinds[name] = "manual"          # human-in-the-loop takes precedence
+        elif callable(fn) and _refs_a_model(fn):
+            kinds[name] = "llm"
+        else:
+            kinds[name] = "script"
     return kinds
 
 

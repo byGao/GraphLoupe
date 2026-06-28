@@ -175,7 +175,7 @@ describe("canvas reducer", () => {
     expect(s.edgeLabels["gate->plan"]).toBe("redo");
   });
 
-  it("node kind: llm once a chat-model call or manual interrupt is observed; persists across runs", () => {
+  it("node kind: llm_start -> llm, manual interrupt -> manual; persists across runs", () => {
     let s = reduce(initialState, ev({ type: "graph", nodes: ["scan", "summarize", "ask"], edges: [] }));
     expect(nodeKind(s, "summarize")).toBe("script");
     s = reduce(s, ev({ type: "llm_start", threadId: "t", runId: "t", node: "summarize",
@@ -183,10 +183,19 @@ describe("canvas reducer", () => {
     s = reduce(s, ev({ type: "manual_inference_required", node: "ask", threadId: "t", interruptId: "i",
       renderedText: "?", expects: "text", promptTokens: { prompt: 1, completion: null, source: "sidecar_estimate" }, toolSchema: null, messages: [] }));
     expect(nodeKind(s, "summarize")).toBe("llm");
-    expect(nodeKind(s, "ask")).toBe("llm");
-    s = reduce(s, ev({ type: "run_started" }));   // a new run must NOT forget learned kinds
+    expect(nodeKind(s, "ask")).toBe("manual");      // interrupt -> manual, distinct from llm
+    s = reduce(s, ev({ type: "run_started" }));     // a new run must NOT forget learned kinds
     expect(nodeKind(s, "summarize")).toBe("llm");
+    expect(nodeKind(s, "ask")).toBe("manual");
     expect(nodeKind(s, "scan")).toBe("script");
+  });
+
+  it("graph event seeds manual kind from the worker's static nodeKinds", () => {
+    const s = reduce(initialState, ev({ type: "graph", nodes: ["plan", "review", "gate"], edges: [],
+      nodeKinds: { plan: "llm", review: "manual", gate: "script" } }));
+    expect(nodeKind(s, "plan")).toBe("llm");
+    expect(nodeKind(s, "review")).toBe("manual");   // visible pre-run
+    expect(nodeKind(s, "gate")).toBe("script");
   });
 
   it("topoOrder is BFS from __start__; overviewRows drops synthetics and carries kind+doc", () => {
