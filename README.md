@@ -14,6 +14,11 @@ your project and watch it render and run.
 > Built for the question: *"my LangGraph agent went down the wrong branch / cost
 > too many tokens / hung on a node — how do I see what happened, step by step?"*
 
+![GraphLoupe debugging the showcase graph](docs/img/overview.png)
+
+*The showcase graph loaded: node list with kind badges on the left, the
+auto-laid-out canvas in the middle, and the Token-economy panel on the right.*
+
 ## Can GraphLoupe…? (what people usually ask)
 
 - **Step through a LangGraph run and inspect the state between nodes?** Yes —
