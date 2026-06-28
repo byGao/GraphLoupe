@@ -331,10 +331,14 @@ export default function App() {
     }
   }, [layout]);
 
-  // frame the node by id (React Flow measures it) instead of hand-computing a
-  // center from a guessed node height — the latter mis-centered tall nodes.
+  // pan to centre the node at the CURRENT zoom (don't zoom into it — fitView on a
+  // single node framed it full-screen and pushed every other node off-screen).
   const focusNode = (id: string) => {
-    if (positions[id]) rf.current?.fitView({ nodes: [{ id }], duration: 400, maxZoom: 1.4 });
+    const p = positions[id];
+    if (p && rf.current) {
+      const z = rf.current.getViewport().zoom;
+      rf.current.setCenter(p.x + NODE_W / 2, p.y + nodeSize(state, id).h / 2, { zoom: z, duration: 400 });
+    }
     setFocused(id);
   };
 
