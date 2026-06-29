@@ -86,15 +86,25 @@ export function pyLabel(py: PyCommand): string {
 }
 
 /**
- * Actionable message when the resolved interpreter is missing the sidecar/worker deps
- * — names the interpreter and the exact remediation, instead of a raw
+ * The sidecar's HTTP/WebSocket deps — the leaf packages a user's langgraph project
+ * env typically lacks (langgraph itself is already there). Recommended explicitly so
+ * we never tell the user to `pip install -r requirements.lock`, which pins langgraph
+ * and would downgrade their project's version (lesson #107).
+ */
+export const SIDECAR_WEB_DEPS = ["fastapi", "uvicorn", "starlette"] as const;
+
+/**
+ * Actionable message when the resolved interpreter is missing the sidecar deps — names
+ * the interpreter and recommends installing only the leaf web deps (not the lockfile,
+ * which would clobber the project's langgraph; lesson #107), instead of a raw
  * ModuleNotFoundError stack (closes the P0-2 R-04 hook).
  */
 export function doctorMessage(py: PyCommand, missing: string[]): string {
   return (
     `GraphLoupe's Python interpreter (${pyLabel(py)}) is missing: ${missing.join(", ")}. ` +
-    "Install the deps into it — run `pip install -r requirements.lock` with that interpreter — " +
-    'or pick another via "Python: Select Interpreter" or set graphloupe.pythonPath.'
+    `Add GraphLoupe's sidecar deps to it — \`pip install ${SIDECAR_WEB_DEPS.join(" ")}\` ` +
+    "(leaf packages; they won't change your project's langgraph) — or pick another via " +
+    '"Python: Select Interpreter" or set graphloupe.pythonPath.'
   );
 }
 

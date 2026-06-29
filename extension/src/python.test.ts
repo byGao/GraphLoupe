@@ -74,11 +74,12 @@ describe("preflight doctor (R-03)", () => {
     expect(parseImportProbe(1, stderr)).toEqual(["langgraph"]);
   });
 
-  it("message names the interpreter and the pip remediation", () => {
-    const msg = doctorMessage({ command: "py", args: ["-3"] }, ["langgraph"]);
+  it("recommends leaf deps, not the lockfile that would clobber langgraph (#107)", () => {
+    const msg = doctorMessage({ command: "py", args: ["-3"] }, ["fastapi"]);
     expect(msg).toContain("py -3");
-    expect(msg).toContain("langgraph");
-    expect(msg).toContain("pip install -r requirements.lock");
+    expect(msg).toContain("fastapi");
+    expect(msg).toContain("pip install fastapi uvicorn starlette");
+    expect(msg).not.toContain("requirements.lock");
   });
 
   it("not-found message points at install / select / pythonPath, not a raw ENOENT", () => {
