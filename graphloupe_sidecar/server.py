@@ -38,15 +38,32 @@ def _load_timeout() -> float:
     return float(os.environ.get("GRAPHLOUPE_LOAD_TIMEOUT", "10"))
 
 
+def _worker_python() -> str:
+    """The interpreter that runs the worker (= the user's graph). P0-3b: the sidecar runs
+    in a managed venv, but the worker must run in the USER's interpreter (their langgraph +
+    project deps), passed as GRAPHLOUPE_WORKER_PYTHON. Falls back to this process's
+    interpreter (3a single-environment behavior) when unset."""
+    return os.environ.get("GRAPHLOUPE_WORKER_PYTHON") or sys.executable
+
+
+def _worker_env() -> dict[str, str]:
+    """Inject the app dir on PYTHONPATH so the user's (foreign) interpreter can import
+    graphloupe_sidecar.worker and protocol, which live in GraphLoupe's install, not the
+    user's site-packages."""
+    existing = os.environ.get("PYTHONPATH", "")
+    return {**os.environ, "PYTHONPATH": _APP_DIR + (os.pathsep + existing if existing else "")}
+
+
 def _spawn_worker(entry: str, project_root: str) -> subprocess.Popen[str]:
     # Intentional isolation (graph-loading spec): run the user graph in a separate
     # process. `entry`/`project_root` are trusted local VS Code settings, not network input.
-    cmd = [sys.executable, "-m", "graphloupe_sidecar.worker", "--entry", entry]
+    cmd = [_worker_python(), "-m", "graphloupe_sidecar.worker", "--entry", entry]
     if project_root:
         cmd += ["--project-root", project_root]
     return subprocess.Popen(  # nosec B603
         cmd,
         cwd=_APP_DIR,
+        env=_worker_env(),
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,
         text=True,

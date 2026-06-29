@@ -74,11 +74,11 @@ describe("preflight doctor (R-03)", () => {
     expect(parseImportProbe(1, stderr)).toEqual(["langgraph"]);
   });
 
-  it("recommends leaf deps, not the lockfile that would clobber langgraph (#107)", () => {
-    const msg = doctorMessage({ command: "py", args: ["-3"] }, ["fastapi"]);
+  it("names what the user interpreter can't import + points at Select Interpreter, never the lockfile (#107)", () => {
+    const msg = doctorMessage({ command: "py", args: ["-3"] }, ["langgraph"]);
     expect(msg).toContain("py -3");
-    expect(msg).toContain("fastapi");
-    expect(msg).toContain("pip install fastapi uvicorn starlette");
+    expect(msg).toContain("langgraph");
+    expect(msg).toContain("Select Interpreter");
     expect(msg).not.toContain("requirements.lock");
   });
 

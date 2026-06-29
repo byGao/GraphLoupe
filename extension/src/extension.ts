@@ -8,8 +8,9 @@
  * "GraphLoupe: Reload Graph" restarts the session in place (re-reads settings, re-spawns).
  */
 import * as vscode from "vscode";
-import { ChildProcess, spawn } from "node:child_process";
+import { ChildProcess, spawn, spawnSync } from "node:child_process";
 import { AddressInfo, createServer } from "node:net";
+import { mkdirSync } from "node:fs";
 import WebSocket from "ws";
 import { parseServerEvent } from "../../protocol";
 import {
@@ -20,6 +21,8 @@ import {
   resolvePython, fallbackCandidates, probeExists, runDoctor,
   doctorMessage, interpreterNotFoundMessage, pyLabel, type PyCommand,
 } from "./python";
+import { venvPython, probeVenv, needsBootstrap, SIDECAR_VENV_DEPS } from "./venv";
+import * as path from "node:path";
 
 interface GraphEntry { entry: string; file: string; line: number }
 
@@ -80,6 +83,70 @@ async function resolveInterpreter(): Promise<PyCommand | undefined> {
     fallback: fallbackCandidates(process.platform),
     exists: probeExists,
   });
+}
+
+/** Resolve a PyCommand (possibly `py -3`) to a concrete interpreter path, so the worker
+ *  can be launched by a single executable (GRAPHLOUPE_WORKER_PYTHON). Falls back to the
+ *  command itself if introspection fails. */
+function concreteExecutable(py: PyCommand): string {
+  try {
+    const r = spawnSync(py.command, [...py.args, "-c", "import sys;print(sys.executable)"],
+      { encoding: "utf8", timeout: 8000 });
+    const out = (r.stdout || "").trim();
+    if (r.status === 0 && out) return out;
+  } catch { /* fall through */ }
+  return py.command;
+}
+
+/** Run a child process to completion, capturing stderr (no shell). */
+function runProc(command: string, args: string[]): Promise<{ code: number | null; stderr: string }> {
+  return new Promise((resolve) => {
+    const p = spawn(command, args);
+    let stderr = "";
+    p.stderr?.on("data", (d) => (stderr += d.toString()));
+    p.on("error", (e) => resolve({ code: null, stderr: e.message }));
+    p.on("close", (code) => resolve({ code, stderr }));
+  });
+}
+
+/** Ensure the managed sidecar venv (P0-3b): reuse it if it already imports the sidecar
+ *  deps; otherwise create it with the user's interpreter and pip-install the deps, with a
+ *  one-time progress notification. Returns the venv interpreter path, or undefined on
+ *  failure (after surfacing an actionable error). */
+async function ensureSidecarVenv(
+  context: vscode.ExtensionContext, userPy: PyCommand,
+): Promise<string | undefined> {
+  const venvRoot = path.join(context.globalStorageUri.fsPath, "sidecar-venv");
+  const platform = process.platform;
+  if (!needsBootstrap(probeVenv(venvRoot, platform))) return venvPython(venvRoot, platform);
+
+  let err: string | undefined;
+  await vscode.window.withProgress(
+    { location: vscode.ProgressLocation.Notification, cancellable: false,
+      title: "GraphLoupe: preparing the sidecar environment (one-time)…" },
+    async (progress) => {
+      try {
+        mkdirSync(context.globalStorageUri.fsPath, { recursive: true });
+        progress.report({ message: "creating virtual environment" });
+        const mk = await runProc(userPy.command, [...userPy.args, "-m", "venv", venvRoot]);
+        if (mk.code !== 0) { err = `venv creation failed: ${mk.stderr.trim().slice(-300)}`; return; }
+        progress.report({ message: "installing fastapi · uvicorn · starlette" });
+        const pip = await runProc(venvPython(venvRoot, platform),
+          ["-m", "pip", "install", "--disable-pip-version-check", ...SIDECAR_VENV_DEPS]);
+        if (pip.code !== 0) { err = `pip install failed: ${pip.stderr.trim().slice(-300)}`; return; }
+      } catch (e) {
+        err = (e as Error).message;
+      }
+    },
+  );
+  if (err || needsBootstrap(probeVenv(venvRoot, platform))) {
+    setStatus({ t: "spawnError", reason: "sidecar env setup failed" });
+    void vscode.window.showErrorMessage(
+      `GraphLoupe: could not set up the sidecar environment. ${err ?? "deps still missing after install."} `
+      + "Check that the selected Python can create venvs and reach PyPI.");
+    return undefined;
+  }
+  return venvPython(venvRoot, platform);
 }
 
 /** AST-scan the project for build_graph entries (no user code is executed). */
@@ -192,8 +259,8 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
   setStatus({ t: "spawn" });
   stderrTail = [];
   try {
-    // P0-3a: resolve the user's interpreter, then preflight it (fastapi+langgraph) so a
-    // missing dep / wrong interpreter gives an actionable message instead of a raw crash.
+    // P0-3a: resolve the user's interpreter (runs the worker = their graph), then preflight
+    // it for langgraph (P0-3b: fastapi now lives in the managed venv, not the user env).
     const py = await resolveInterpreter();
     if (!py) {
       interpreterLabel = undefined;
@@ -215,8 +282,15 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
       return;
     }
 
+    // P0-3b: the sidecar runs in a managed venv (fastapi/uvicorn); the worker runs in the
+    // user's interpreter, passed via GRAPHLOUPE_WORKER_PYTHON.
+    const sidecarPy = await ensureSidecarVenv(context, py);
+    if (!sidecarPy) { killSidecar(); return; }
+    env.GRAPHLOUPE_WORKER_PYTHON = concreteExecutable(py);
+    interpreterLabel = `${pyLabel(py)} · sidecar: managed venv`;
+
     const port = await freePort();
-    const child = spawn(py.command, [...py.args, "-m", "graphloupe_sidecar.server", "--port", String(port)], {
+    const child = spawn(sidecarPy, ["-m", "graphloupe_sidecar.server", "--port", String(port)], {
       cwd: context.extensionPath,
       env,
     });

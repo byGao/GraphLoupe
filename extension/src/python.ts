@@ -86,24 +86,16 @@ export function pyLabel(py: PyCommand): string {
 }
 
 /**
- * The sidecar's HTTP/WebSocket deps — the leaf packages a user's langgraph project
- * env typically lacks (langgraph itself is already there). Recommended explicitly so
- * we never tell the user to `pip install -r requirements.lock`, which pins langgraph
- * and would downgrade their project's version (lesson #107).
- */
-export const SIDECAR_WEB_DEPS = ["fastapi", "uvicorn", "starlette"] as const;
-
-/**
- * Actionable message when the resolved interpreter is missing the sidecar deps — names
- * the interpreter and recommends installing only the leaf web deps (not the lockfile,
- * which would clobber the project's langgraph; lesson #107), instead of a raw
- * ModuleNotFoundError stack (closes the P0-2 R-04 hook).
+ * Actionable message when the user's interpreter can't import what the worker needs.
+ * P0-3b: the sidecar's fastapi now lives in the managed venv, so the user interpreter
+ * is only checked for langgraph — and the remedy is to select the project's own
+ * environment, never `pip install -r requirements.lock` (which would clobber langgraph;
+ * lesson #107). Replaces a raw ModuleNotFoundError stack (closes the P0-2 R-04 hook).
  */
 export function doctorMessage(py: PyCommand, missing: string[]): string {
   return (
-    `GraphLoupe's Python interpreter (${pyLabel(py)}) is missing: ${missing.join(", ")}. ` +
-    `Add GraphLoupe's sidecar deps to it — \`pip install ${SIDECAR_WEB_DEPS.join(" ")}\` ` +
-    "(leaf packages; they won't change your project's langgraph) — or pick another via " +
+    `GraphLoupe's selected Python interpreter (${pyLabel(py)}) can't import: ${missing.join(", ")}. ` +
+    "It needs to be the environment your LangGraph project runs in — pick it via " +
     '"Python: Select Interpreter" or set graphloupe.pythonPath.'
   );
 }
@@ -126,13 +118,15 @@ export interface DoctorResult {
 }
 
 /**
- * Run the import preflight with the resolved interpreter (node-only IO wrapper; the
- * parsing/messaging it relies on is unit-tested). A spawn failure (ENOENT) returns
- * ok:false with no missing list — the caller treats that as "interpreter not runnable".
+ * Preflight the USER's interpreter for what the worker needs (node-only IO wrapper; the
+ * parsing/messaging it relies on is unit-tested). P0-3b: only langgraph is checked here —
+ * the sidecar's fastapi lives in the managed venv (see venv.ts), not the user's env. A
+ * spawn failure (ENOENT) returns ok:false with no missing list — the caller treats that
+ * as "interpreter not runnable".
  */
 export function runDoctor(py: PyCommand): DoctorResult {
   try {
-    const r = spawnSync(py.command, [...py.args, "-c", "import fastapi, langgraph"], {
+    const r = spawnSync(py.command, [...py.args, "-c", "import langgraph"], {
       encoding: "utf8",
       timeout: 8000,
     });
