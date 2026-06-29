@@ -16,6 +16,10 @@ import {
   initialStatus, nextStatus, statusLabel, spawnErrorMessage,
   type SidecarStatus, type SidecarEvent,
 } from "./sidecarStatus";
+import {
+  resolvePython, fallbackCandidates, probeExists, runDoctor,
+  doctorMessage, interpreterNotFoundMessage, pyLabel, type PyCommand,
+} from "./python";
 
 interface GraphEntry { entry: string; file: string; line: number }
 
@@ -26,6 +30,7 @@ let statusBar: vscode.StatusBarItem | undefined;
 let status: SidecarStatus = initialStatus;
 const expectedKills = new WeakSet<ChildProcess>();  // children we asked to stop
 let stderrTail: string[] = [];
+let interpreterLabel: string | undefined;  // resolved Python, shown in the status-bar tooltip
 
 /** Advance the lifecycle status and reflect it in the status bar. */
 function setStatus(ev: SidecarEvent): void {
@@ -33,7 +38,7 @@ function setStatus(ev: SidecarEvent): void {
   if (!statusBar) return;
   const label = statusLabel(status);
   statusBar.text = label.text;
-  statusBar.tooltip = label.tooltip;
+  statusBar.tooltip = interpreterLabel ? `${label.tooltip}\nPython: ${interpreterLabel}` : label.tooltip;
   statusBar.backgroundColor = label.warn
     ? new vscode.ThemeColor("statusBarItem.warningBackground")
     : undefined;
@@ -44,13 +49,48 @@ function resolveProjectRoot(): string {
   return cfg.get<string>("projectRoot") || vscode.workspace.workspaceFolders?.[0]?.uri.fsPath || "";
 }
 
+/** ms-python.python's active interpreter path, or undefined if the extension is
+ *  absent / inactive / errors — a soft dependency, never throws (R-02). */
+async function msPythonInterpreter(): Promise<string | undefined> {
+  try {
+    const ext = vscode.extensions.getExtension("ms-python.python");
+    if (!ext) return undefined;
+    // ms-python's API is untyped here (no @types); treat it dynamically.
+    const api: any = ext.isActive ? ext.exports : await ext.activate();  // eslint-disable-line @typescript-eslint/no-explicit-any
+    const envs = api?.environments;
+    if (!envs?.getActiveEnvironmentPath) return undefined;
+    const active = envs.getActiveEnvironmentPath();
+    if (!active) return undefined;
+    const resolved = await envs.resolveEnvironment?.(active);
+    return resolved?.executable?.uri?.fsPath ?? active.path;
+  } catch {
+    return undefined;
+  }
+}
+
+/** Resolve the Python interpreter for the sidecar/discover spawns (P0-3a):
+ *  graphloupe.pythonPath > ms-python active env > PATH fallback. undefined = none runs.
+ *  3a is single-environment, so the worker inherits this via the sidecar's sys.executable. */
+async function resolveInterpreter(): Promise<PyCommand | undefined> {
+  const configPath = vscode.workspace.getConfiguration("graphloupe").get<string>("pythonPath") || "";
+  const msPythonPath = await msPythonInterpreter();
+  return resolvePython({
+    configPath,
+    msPythonPath,
+    fallback: fallbackCandidates(process.platform),
+    exists: probeExists,
+  });
+}
+
 /** AST-scan the project for build_graph entries (no user code is executed). */
-function discoverGraphs(context: vscode.ExtensionContext, projectRoot: string): Promise<GraphEntry[]> {
+async function discoverGraphs(context: vscode.ExtensionContext, projectRoot: string): Promise<GraphEntry[]> {
+  if (!projectRoot) return [];
+  const py = await resolveInterpreter();
+  if (!py) return [];
   return new Promise((resolve) => {
-    if (!projectRoot) return resolve([]);
     const proc = spawn(
-      "python",
-      ["-m", "graphloupe_sidecar.discover", "--project-root", projectRoot],
+      py.command,
+      [...py.args, "-m", "graphloupe_sidecar.discover", "--project-root", projectRoot],
       { cwd: context.extensionPath, env: process.env },
     );
     let out = "";
@@ -152,8 +192,31 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
   setStatus({ t: "spawn" });
   stderrTail = [];
   try {
+    // P0-3a: resolve the user's interpreter, then preflight it (fastapi+langgraph) so a
+    // missing dep / wrong interpreter gives an actionable message instead of a raw crash.
+    const py = await resolveInterpreter();
+    if (!py) {
+      interpreterLabel = undefined;
+      setStatus({ t: "spawnError", reason: "no Python interpreter" });
+      void vscode.window.showErrorMessage(interpreterNotFoundMessage());
+      killSidecar();
+      return;
+    }
+    interpreterLabel = pyLabel(py);
+    const doctor = runDoctor(py);
+    if (!doctor.ok) {
+      const msg = doctor.missing.length ? doctorMessage(py, doctor.missing) : interpreterNotFoundMessage();
+      setStatus({
+        t: "spawnError",
+        reason: doctor.missing.length ? `missing ${doctor.missing.join(", ")}` : "interpreter not runnable",
+      });
+      void vscode.window.showErrorMessage(msg);
+      killSidecar();
+      return;
+    }
+
     const port = await freePort();
-    const child = spawn("python", ["-m", "graphloupe_sidecar.server", "--port", String(port)], {
+    const child = spawn(py.command, [...py.args, "-m", "graphloupe_sidecar.server", "--port", String(port)], {
       cwd: context.extensionPath,
       env,
     });

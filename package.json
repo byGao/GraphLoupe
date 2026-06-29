@@ -58,6 +58,11 @@
           "type": "string",
           "default": "",
           "description": "Folder put on the worker's sys.path so graphEntry resolves against your project. Empty = the first workspace folder."
+        },
+        "graphloupe.pythonPath": {
+          "type": "string",
+          "default": "",
+          "description": "Full path to the Python interpreter for the sidecar (needs the deps in requirements.lock). Empty = use the interpreter selected by the Python extension (ms-python.python), else fall back to py -3 / python3 / python on PATH."
         }
       }
     }
