@@ -27,6 +27,9 @@ export interface DiffEntry { channel: string; op: string; before?: unknown; afte
 export interface Snapshot { values: Record<string, unknown>; diff: DiffEntry[] }
 export interface Paused { node: string; checkpointId: string }
 
+/** One point on the time-travel timeline; `node` is what runs next from here. */
+export interface CheckpointRef { checkpointId: string; node: string | null }
+
 export interface CanvasState {
   nodes: string[];
   edges: [string, string][];
@@ -36,7 +39,7 @@ export interface CanvasState {
   pending: ManualRequest | null;  // manual inference awaiting a pasted answer
   paused: Paused | null;          // stopped at a breakpoint (debugging)
   snapshot: Snapshot | null;      // state at the current pause
-  checkpoints: string[];          // checkpoint ids seen (newest first) for time-travel
+  checkpoints: CheckpointRef[];   // time-travel timeline (newest first); click one to rewind
   inputSchema: Record<string, unknown> | null;  // graph input JSON Schema for the run form
   projectRoot: string | null;     // project root the graph loaded from, for form defaults
   tokens: Record<string, NodeTokens>;  // per-node token tally for the current run (PHASE 4)
@@ -218,7 +221,9 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
     }
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null,
-        tokens: {}, llmPending: {} };
+        checkpoints: [], tokens: {}, llmPending: {} };
+    case "checkpoint_history":
+      return { ...state, checkpoints: ev.checkpoints };
     case "llm_start":
       // buffer the call; its prompt is finalized at llm_end (exact if api_usage arrives).
       // observing a chat-model call marks this node as inference (persists across runs).
@@ -252,18 +257,11 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
         ...state,
         active: ev.node,
         paused: { node: ev.node, checkpointId: ev.checkpointId },
-        checkpoints: [ev.checkpointId, ...state.checkpoints.filter((c) => c !== ev.checkpointId)],
       };
     case "state_snapshot":
       return { ...state, snapshot: { values: ev.snapshot.values, diff: ev.snapshot.diff ?? [] } };
     case "node_end":
-      // record each node boundary so "◀ Back" can fork from the previous node
-      // even when no breakpoint was set there
-      return {
-        ...state,
-        active: state.active === ev.node ? null : state.active,
-        checkpoints: [ev.checkpointId, ...state.checkpoints.filter((c) => c !== ev.checkpointId)],
-      };
+      return { ...state, active: state.active === ev.node ? null : state.active };
     case "manual_inference_required":
       return {
         ...state,

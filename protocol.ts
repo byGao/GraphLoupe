@@ -114,9 +114,17 @@ export const BreakpointHit = z.object({
   ...env, type: z.literal("breakpoint_hit"),
   threadId: z.string(), runId: z.string(), node: z.string(), when: BoundaryWhen, checkpointId: z.string(),
 });
+export const CheckpointRef = z.object({
+  checkpointId: z.string(),
+  node: z.string().nullable(),  // next node to run from here ("rewind to before <node>"); null at the end
+});
 export const StateSnapshotEvent = z.object({
   ...env, type: z.literal("state_snapshot"),
   threadId: z.string(), checkpointId: z.string(), snapshot: StateSnapshot,
+});
+export const CheckpointHistory = z.object({
+  ...env, type: z.literal("checkpoint_history"),
+  threadId: z.string(), checkpoints: z.array(CheckpointRef),
 });
 export const RunFinished = z.object({
   ...env, type: z.literal("run_finished"),
@@ -131,7 +139,7 @@ export const ErrorEvent = z.object({
 export const ServerEvent = z.discriminatedUnion("type", [
   GraphTopology, RunStarted, NodeStart, NodeEnd, LlmStart, LlmToken, LlmEnd,
   ToolStart, ToolEnd, ManualInferenceRequired, BreakpointHit,
-  StateSnapshotEvent, RunFinished, ErrorEvent,
+  StateSnapshotEvent, CheckpointHistory, RunFinished, ErrorEvent,
 ]);
 export type ServerEvent = z.infer<typeof ServerEvent>;
 

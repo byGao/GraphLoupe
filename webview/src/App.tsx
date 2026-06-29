@@ -8,7 +8,7 @@ import "@xyflow/react/dist/style.css";
 import {
   autoTab, buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind,
   overviewRows, reduce, tokenSummary,
-  type CanvasState, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
+  type CanvasState, type CheckpointRef, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
@@ -55,20 +55,51 @@ function postCmd(msg: Record<string, unknown>): void {
   vscode.postMessage({ v: "0.1.0", corr: null, ...msg });
 }
 
-function DebugPanel(
-  { paused, snapshot, checkpoints }: { paused: Paused; snapshot: Snapshot | null; checkpoints: string[] },
-) {
+// Time-travel timeline: every checkpoint on the thread (newest first). Click one to
+// rewind — the worker forks from it and re-runs to the next pause.
+function CheckpointTimeline({ checkpoints }: { checkpoints: CheckpointRef[] }) {
+  return (
+    <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--line)" }}>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
+        <strong style={{ fontSize: 13 }}>⏱ Time travel</strong>
+        <span style={{ color: "#6e7681", fontSize: 11 }}>click a checkpoint to rewind &amp; re-run</span>
+      </div>
+      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+        {checkpoints.map((c, i) => {
+          const now = i === 0;  // newest = the current head
+          return (
+            <button key={c.checkpointId}
+              disabled={now}
+              onClick={() => postCmd({ type: "fork", threadId: "run", checkpointId: c.checkpointId })}
+              title={now ? "current position" : `rewind to before ${c.node ?? "end"}`}
+              style={{
+                display: "flex", alignItems: "center", gap: 8, textAlign: "left",
+                border: "none", borderRadius: 4, padding: "4px 8px", fontSize: 12,
+                background: now ? "var(--surface-2)" : "transparent",
+                color: now ? "var(--text)" : "var(--muted)",
+                cursor: now ? "default" : "pointer",
+              }}>
+              <span style={{ color: now ? "var(--pause)" : "#6e7681" }}>{now ? "▶" : "↩"}</span>
+              <span style={{ flex: 1 }}>{c.node ? `before ${c.node}` : "end"}</span>
+              {/* show the suffix: time-ordered uuids share a prefix, so the head differs */}
+              <span style={{ color: "#6e7681", fontFamily: "monospace", fontSize: 11 }}>…{c.checkpointId.slice(-6)}</span>
+              {now && <span style={{ color: "var(--pause)", fontSize: 11 }}>now</span>}
+            </button>
+          );
+        })}
+      </div>
+    </div>
+  );
+}
+
+function DebugPanel({ paused, snapshot }: { paused: Paused; snapshot: Snapshot | null }) {
   const [override, setOverride] = useState("");
-  const prevCheckpoint = checkpoints[1];  // [0] is the current pause; [1] is the previous node
   return (
     <div style={{ padding: "10px 12px" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
         <strong style={{ color: "var(--pause)" }}>‖ paused @ {paused.node}</strong>
         <span style={{ color: "#6e7681", fontSize: 12 }}>checkpoint {paused.checkpointId.slice(0, 8)}</span>
-        <button style={{ marginLeft: "auto", fontSize: 12 }} disabled={!prevCheckpoint}
-          title={prevCheckpoint ? "Re-run from the previous node" : "no earlier checkpoint"}
-          onClick={() => prevCheckpoint && postCmd({ type: "fork", threadId: "run", checkpointId: prevCheckpoint })}>◀ Back</button>
-        <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
+        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
         <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
       </div>
       <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
@@ -448,7 +479,19 @@ export default function App() {
   // drawn by our OrthEdge from ELK route points, and routing them through
   // useEdgesState made RF skip them while nodes re-measured (edges vanished).
   const [rfNodes, setRfNodes, onNodesChange] = useNodesState<Node>([]);
-  useEffect(() => { setRfNodes(nodes); }, [nodes, setRfNodes]);
+  // MERGE rather than replace: clicking a node recomputes `nodes` (breakpoint/focus
+  // style), and a wholesale setRfNodes(nodes) would drop RF's `measured` dimensions —
+  // un-measured nodes render at zero size and vanish (and their edges with them). Keep
+  // RF's measured size + selection, refresh only what we drive (position/data/style).
+  useEffect(() => {
+    setRfNodes((prev) => {
+      const byId = new Map(prev.map((p) => [p.id, p]));
+      return nodes.map((n) => {
+        const old = byId.get(n.id);
+        return old ? { ...old, position: n.position, data: n.data, style: n.style } : n;
+      });
+    });
+  }, [nodes, setRfNodes]);
 
   const runGraph = () =>
     state.inputSchema && !showRaw
@@ -473,7 +516,9 @@ export default function App() {
             style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>■ Stop</button>
         )}
         <span style={{ color: "#8b949e", fontSize: 12 }}>read-only{state.running ? " · running" : ""}</span>
-        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => vscode.postMessage({ type: "ui:selectGraph" })}>⇄ Graph</button>
+        <button style={{ marginLeft: "auto", fontSize: 12 }}
+          title="Pick which compiled LangGraph in your project to load"
+          onClick={() => vscode.postMessage({ type: "ui:selectGraph" })}>📂 Select graph…</button>
         <button style={{ fontSize: 12 }} onClick={() => setShowOverview((o) => !o)}>⌑ Overview</button>
       </div>
       {state.error && (
@@ -591,9 +636,14 @@ export default function App() {
               </div>
             )}
             {tab === "state" && (
-              state.paused
-                ? <DebugPanel paused={state.paused} snapshot={state.snapshot} checkpoints={state.checkpoints} />
-                : <div className="gl-help" style={{ padding: 12 }}>Not paused. Click a node on the canvas to set a breakpoint, then Run — state and diff show here.</div>
+              <>
+                {state.checkpoints.length > 0 && <CheckpointTimeline checkpoints={state.checkpoints} />}
+                {state.paused
+                  ? <DebugPanel paused={state.paused} snapshot={state.snapshot} />
+                  : state.checkpoints.length === 0 && (
+                    <div className="gl-help" style={{ padding: 12 }}>Not paused. Click a node on the canvas to set a breakpoint, then Run — state and diff show here.</div>
+                  )}
+              </>
             )}
             {tab === "tokens" && <TokenPanel state={state} />}
             {tab === "manual" && (

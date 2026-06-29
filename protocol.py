@@ -206,11 +206,26 @@ class BreakpointHit(Envelope):
     checkpointId: CheckpointId
 
 
+class CheckpointRef(BaseModel):
+    # One entry in the time-travel timeline. Added time-travel-timeline.
+    checkpointId: CheckpointId
+    node: NodeName | None  # the next node to run from here ("rewind to before <node>"); None at the end
+
+
 class StateSnapshotEvent(Envelope):
     type: Literal["state_snapshot"] = "state_snapshot"
     threadId: ThreadId
     checkpointId: CheckpointId
     snapshot: StateSnapshot
+
+
+class CheckpointHistory(Envelope):
+    # The time-travel timeline: every checkpoint on the thread, newest first. Emitted
+    # at each pause; the UI lists them and forks the one the user clicks. Added
+    # time-travel-timeline.
+    type: Literal["checkpoint_history"] = "checkpoint_history"
+    threadId: ThreadId
+    checkpoints: list[CheckpointRef]
 
 
 class RunFinished(Envelope):
@@ -234,7 +249,7 @@ ServerEvent = Annotated[
     Union[
         GraphTopology, RunStarted, NodeStart, NodeEnd, LlmStart, LlmToken, LlmEnd,
         ToolStart, ToolEnd, ManualInferenceRequired, BreakpointHit,
-        StateSnapshotEvent, RunFinished, ErrorEvent,
+        StateSnapshotEvent, CheckpointHistory, RunFinished, ErrorEvent,
     ],
     Field(discriminator="type"),
 ]

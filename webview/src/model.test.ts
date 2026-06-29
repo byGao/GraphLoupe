@@ -51,15 +51,26 @@ describe("canvas reducer", () => {
     expect(s.pending).toBeNull();
   });
 
-  it("breakpoint_hit -> paused + checkpoint; state_snapshot -> snapshot; run_finished clears", () => {
+  it("breakpoint_hit -> paused; state_snapshot -> snapshot; run_finished clears", () => {
     let s = reduce(initialState, ev({ type: "breakpoint_hit", node: "b", when: "before", checkpointId: "c1" }));
     expect(s.paused).toEqual({ node: "b", checkpointId: "c1" });
-    expect(s.checkpoints).toEqual(["c1"]);
     s = reduce(s, ev({ type: "state_snapshot", snapshot: { values: { log: ["a"] }, diff: [{ channel: "log", op: "add", before: null, after: ["a"] }] } }));
     expect(s.snapshot?.values).toEqual({ log: ["a"] });
     s = reduce(s, ev({ type: "run_finished", status: "completed" }));
     expect(s.paused).toBeNull();
     expect(s.snapshot).toBeNull();
+  });
+
+  it("checkpoint_history populates the time-travel timeline; run_started clears it", () => {
+    const hist = ev({ type: "checkpoint_history", threadId: "run", checkpoints: [
+      { checkpointId: "c2", node: "review" },
+      { checkpointId: "c1", node: "plan" },
+      { checkpointId: "c0", node: "ingest" },
+    ] });
+    let s = reduce(initialState, hist);
+    expect(s.checkpoints.map((c) => c.node)).toEqual(["review", "plan", "ingest"]);
+    s = reduce(s, ev({ type: "run_started" }));
+    expect(s.checkpoints).toEqual([]);
   });
 
   it("formFields filters array/object + flags paths; buildInput types + defaults", () => {

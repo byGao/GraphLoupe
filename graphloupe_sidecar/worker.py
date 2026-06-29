@@ -302,8 +302,11 @@ def _emit_event(ev: dict[str, Any], nodes: set[str], thread_id: str, run_id: str
 
 
 async def _stream(graph: Any, nodes: set[str], source: Any, thread_id: str,
-                  before: list[str] | None = None, after: list[str] | None = None) -> None:
-    cfg = {"configurable": {"thread_id": thread_id}}
+                  before: list[str] | None = None, after: list[str] | None = None,
+                  config: dict[str, Any] | None = None) -> None:
+    # `config` lets a back-a-node fork resume from a past checkpoint; otherwise the
+    # thread's latest checkpoint (by thread_id) is used.
+    cfg = config or {"configurable": {"thread_id": thread_id}}
     kwargs: dict[str, Any] = {}
     if before is not None:
         kwargs["interrupt_before"] = before
@@ -313,6 +316,58 @@ async def _stream(graph: Any, nodes: set[str], source: Any, thread_id: str,
         if _abort["on"]:
             return  # cancelled mid-stream; _run emits run_finished(aborted)
         _emit_event(ev, nodes, thread_id, thread_id)
+
+
+class _ForkTo:
+    """A pause handler resolved a back-a-node fork; carries the target checkpoint
+    config (already state-overridden if requested) for the run loop to resume from."""
+
+    def __init__(self, config: dict[str, Any]) -> None:
+        self.config = config
+
+
+def _resolve_checkpoint(graph: Any, thread_id: str, ckpt_id: str | None) -> dict[str, Any] | None:
+    """The full checkpoint config (incl checkpoint_ns) for `ckpt_id` from history;
+    hand-built configs miss checkpoint_ns and update_state would KeyError."""
+    base = {"configurable": {"thread_id": thread_id}}
+    return next((s.config for s in graph.get_state_history(base)
+                 if s.config["configurable"].get("checkpoint_id") == ckpt_id), None)
+
+
+_HISTORY_LIMIT = 50  # cap the time-travel timeline so replays don't grow it unbounded
+
+
+def _checkpoint_history(graph: Any, thread_id: str) -> str:
+    """The time-travel timeline (newest first): the current head's lineage back to the
+    start, following parent_config. This is the live path only — get_state_history would
+    also dump every orphaned replay branch, which is just noise. Each entry's `node` is
+    what would run next from that checkpoint ("rewind to before <node>")."""
+    refs: list[P.CheckpointRef] = []
+    s = graph.get_state({"configurable": {"thread_id": thread_id}})
+    while s is not None and len(refs) < _HISTORY_LIMIT:
+        cid = s.config["configurable"].get("checkpoint_id")
+        if cid is None:
+            break
+        node = s.next[0] if s.next else None
+        # collapse consecutive same-node entries: forking re-runs a node, leaving a
+        # child checkpoint at the same position; keep the newest (a real loop puts other
+        # nodes in between, so it isn't collapsed).
+        if not refs or refs[-1].node != node:
+            refs.append(P.CheckpointRef(checkpointId=cid, node=node))
+        s = graph.get_state(s.parent_config) if s.parent_config else None
+    return P.CheckpointHistory(threadId=thread_id, checkpoints=refs).model_dump_json()
+
+
+def _fork_target(graph: Any, thread_id: str, cmd: dict[str, Any]) -> dict[str, Any] | None:
+    """Resolve a fork command into a resume config; emit checkpoint_not_found on a miss."""
+    ckpt_id = cmd.get("checkpointId")
+    cfg = _resolve_checkpoint(graph, thread_id, ckpt_id)
+    if cfg is None:
+        _emit(P.ErrorEvent(code="checkpoint_not_found",
+                           message=f"no checkpoint {ckpt_id}").model_dump_json())
+        return None
+    override = cmd.get("stateOverride")
+    return graph.update_state(cfg, override) if override else cfg
 
 
 async def _next_cmd(cmd_q: "asyncio.Queue[str | None]",
@@ -334,14 +389,21 @@ async def _next_cmd(cmd_q: "asyncio.Queue[str | None]",
 
 
 async def _await_resume(cmd_q: "asyncio.Queue[str | None]", intr_value: dict[str, Any],
-                        node: str, breakpoints: set[tuple[str, str]]) -> Any:
+                        node: str, breakpoints: set[tuple[str, str]],
+                        graph: Any, thread_id: str) -> Any:
     while True:
         cmd = await _next_cmd(cmd_q, breakpoints)
         if cmd is None:
             return _SHUTDOWN
-        if cmd.get("cmd") == "abort":
+        kind = cmd.get("cmd")
+        if kind == "abort":
             return _ABORT
-        if cmd.get("cmd") != "resume":
+        if kind == "fork":  # ◀ Back: re-run from a past checkpoint instead of resuming
+            target = _fork_target(graph, thread_id, cmd)
+            if target is not None:
+                return _ForkTo(target)
+            continue
+        if kind != "resume":
             continue
         resume_value, err = _validate_resume(intr_value, cmd.get("payload") or {})
         if err:
@@ -350,35 +412,11 @@ async def _await_resume(cmd_q: "asyncio.Queue[str | None]", intr_value: dict[str
         return Command(resume=resume_value)
 
 
-async def _fork_run(graph: Any, nodes: set[str], thread_id: str, cmd: dict[str, Any]) -> None:
-    """Time-travel: re-run from a past checkpoint (optionally with a state override),
-    as a new runId on the same thread. Streams to completion + a final snapshot."""
-    ckpt_id = cmd.get("checkpointId")
-    override = cmd.get("stateOverride")
-    run_id = f"fork-{(ckpt_id or '')[:6]}"
-    base = {"configurable": {"thread_id": thread_id}}
-    # resolve the full checkpoint config (incl checkpoint_ns) from history; hand-built
-    # configs miss checkpoint_ns and update_state would KeyError.
-    target = next((s.config for s in graph.get_state_history(base)
-                   if s.config["configurable"].get("checkpoint_id") == ckpt_id), None)
-    if target is None:
-        _emit(P.ErrorEvent(code="checkpoint_not_found",
-                           message=f"no checkpoint {ckpt_id}").model_dump_json())
-        return
-    cfg = graph.update_state(target, override) if override else target
-    _emit(P.RunStarted(threadId=thread_id, runId=run_id).model_dump_json())
-    async for ev in graph.astream_events(None, version="v2", config=cfg):
-        _emit_event(ev, nodes, thread_id, run_id)
-    _emit(P.RunFinished(threadId=thread_id, runId=run_id, status="completed").model_dump_json())
-    final = graph.get_state({"configurable": {"thread_id": thread_id}})
-    fckpt = final.config["configurable"]["checkpoint_id"] if final.config else "-"
-    _emit(_snapshot(thread_id, fckpt, final.values, {}))
-
-
 async def _await_debug(cmd_q: "asyncio.Queue[str | None]", graph: Any, nodes: set[str],
                        thread_id: str, cfg: dict[str, Any], breakpoints: set[tuple[str, str]],
-                       prev: dict[str, Any]) -> str:
-    """At a breakpoint pause: step / continue / inspect / fork, until an advance is chosen."""
+                       prev: dict[str, Any]) -> Any:
+    """At a breakpoint pause: step / continue / inspect / fork, until an advance is chosen.
+    A fork returns a _ForkTo so the run loop resumes from the chosen checkpoint."""
     while True:
         cmd = await _next_cmd(cmd_q, breakpoints)
         if cmd is None:
@@ -395,7 +433,9 @@ async def _await_debug(cmd_q: "asyncio.Queue[str | None]", graph: Any, nodes: se
             ckpt = state.config["configurable"]["checkpoint_id"] if state.config else "-"
             _emit(_snapshot(thread_id, ckpt, state.values, prev))
         elif kind == "fork":
-            await _fork_run(graph, nodes, thread_id, cmd)
+            target = _fork_target(graph, thread_id, cmd)
+            if target is not None:
+                return _ForkTo(target)
 
 
 async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
@@ -415,6 +455,7 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
     has_checkpointer = getattr(graph, "checkpointer", None) is not None
     prev: dict[str, Any] = {}
     source: Any = run_input
+    fork_config: dict[str, Any] | None = None  # set by ◀ Back: resume from a past checkpoint
     step_mode = False
     while True:
         before: list[str] | None = None
@@ -422,32 +463,44 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
         if has_checkpointer:
             bp_before, after = _bp_lists(breakpoints)
             before = sorted(nodes) if step_mode else bp_before
-        await _stream(graph, nodes, source, thread_id, before, after)
+        was_fork = fork_config is not None
+        await _stream(graph, nodes, source, thread_id, before, after, config=fork_config)
+        fork_config = None
         if _aborted():
             return
         step_mode = False
         state = graph.get_state(cfg) if has_checkpointer else None
         if state is None or not state.next:
             _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="completed").model_dump_json())
+            # a fork/time-travel run reports its final state so the UI can show the result
+            if was_fork and state is not None:
+                fckpt = state.config["configurable"]["checkpoint_id"] if state.config else "-"
+                _emit(_snapshot(thread_id, fckpt, state.values, {}))
             return
         intr = _interrupt_from_state(state)
         if intr is not None:  # manual inference (PHASE 2)
             node, intr_id, val = intr
             _emit(_manual_required(thread_id, node, intr_id, val))
-            outcome = await _await_resume(cmd_q, val, node, breakpoints)
+            _emit(_checkpoint_history(graph, thread_id))  # timeline for ◀ time-travel
+            outcome = await _await_resume(cmd_q, val, node, breakpoints, graph, thread_id)
             if outcome is _SHUTDOWN:
                 return
             if outcome is _ABORT:
                 _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="aborted").model_dump_json())
                 return
+            if isinstance(outcome, _ForkTo):  # ◀ Back from the manual pause
+                fork_config, source = outcome.config, None
+                _emit(P.RunStarted(threadId=thread_id, runId=thread_id).model_dump_json())
+                continue
             source = outcome
             continue
         # breakpoint / step pause (PHASE 3)
         node = state.next[0]
         ckpt = state.config["configurable"]["checkpoint_id"]
-        _emit(P.BreakpointHit(threadId=thread_id, runId=thread_id, node=node,
-                              when="before", checkpointId=ckpt).model_dump_json())
+        _emit(P.BreakpointHit(threadId=thread_id, runId=thread_id, node=node, when="before",
+                              checkpointId=ckpt).model_dump_json())
         _emit(_snapshot(thread_id, ckpt, state.values, prev))
+        _emit(_checkpoint_history(graph, thread_id))  # timeline for ◀ time-travel
         prev = dict(state.values)
         action = await _await_debug(cmd_q, graph, nodes, thread_id, cfg, breakpoints, prev)
         if action == "shutdown":
@@ -455,6 +508,10 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
         if action == "abort":
             _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="aborted").model_dump_json())
             return
+        if isinstance(action, _ForkTo):  # ◀ Back from the breakpoint pause
+            fork_config, source = action.config, None
+            _emit(P.RunStarted(threadId=thread_id, runId=thread_id).model_dump_json())
+            continue
         step_mode = action == "step"
         source = None
 

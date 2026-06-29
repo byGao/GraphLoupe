@@ -2,7 +2,7 @@
   "name": "graphloupe",
   "displayName": "GraphLoupe",
   "description": "LangGraph execution-visualization / debugging IDE (VS Code Extension host).",
-  "version": "0.1.0",
+  "version": "0.2.0",
   "publisher": "byGao",
   "license": "MIT",
   "repository": {
@@ -12,8 +12,20 @@
   "engines": {
     "vscode": "^1.90.0"
   },
-  "categories": ["Debuggers", "Visualization", "AI"],
-  "keywords": ["langgraph", "langchain", "agent", "debugger", "graph", "visualization", "llm"],
+  "categories": [
+    "Debuggers",
+    "Visualization",
+    "AI"
+  ],
+  "keywords": [
+    "langgraph",
+    "langchain",
+    "agent",
+    "debugger",
+    "graph",
+    "visualization",
+    "llm"
+  ],
   "main": "./dist/extension.js",
   "contributes": {
     "commands": [

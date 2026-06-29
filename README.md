@@ -78,6 +78,14 @@ as it runs and pauses at the manual node for your input:
 
 ![showcase execution replay](docs/img/run-replay.gif)
 
+### Time travel
+
+At any pause the **State** tab shows the run's checkpoint timeline — the live path
+from the current node back to `__start__`. Click any earlier checkpoint to rewind
+and re-run from there (fork), so you can retry a node after changing course.
+
+![Time-travel checkpoint timeline](docs/img/time-travel.png)
+
 ## Layout
 
 | Path | What |
