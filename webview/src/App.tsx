@@ -7,7 +7,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   autoTab, buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind,
-  overviewRows, reduce, tokenSummary,
+  overviewRows, reduce, sourceLabel, tokenSummary,
   type CanvasState, type CheckpointRef, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
@@ -317,8 +317,21 @@ function OverviewPanel(
             borderLeft: `3px solid ${KIND[r.kind].color}`,
           }}
         >
-          <div style={{ fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: "#eaf0f7" }}>
-            {KIND[r.kind].icon}{r.node}
+          <div style={{ display: "flex", alignItems: "center", gap: 6 }}>
+            <div style={{ flex: 1, minWidth: 0, fontFamily: "var(--mono)", fontSize: 12.5, fontWeight: 600, color: "#eaf0f7", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
+              {KIND[r.kind].icon}{r.node}
+            </div>
+            {state.nodeSources[r.node] && (
+              <button
+                title={`Open ${sourceLabel(state.nodeSources[r.node])}`}
+                onClick={(e) => {
+                  e.stopPropagation();
+                  const ref = state.nodeSources[r.node];
+                  vscode.postMessage({ type: "ui:openSource", file: ref.file, line: ref.line });
+                }}
+                style={{ flex: "0 0 auto", background: "transparent", border: "none", color: "var(--node)", cursor: "pointer", fontSize: 13, padding: "0 2px", lineHeight: 1 }}
+              >↗</button>
+            )}
           </div>
           {r.doc && (
             <div style={{ marginTop: 4, fontSize: 11, lineHeight: 1.45, color: "#b6c2d0" }}>{r.doc}</div>

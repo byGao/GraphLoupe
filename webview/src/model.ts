@@ -47,6 +47,7 @@ export interface CanvasState {
   nodeDocs: Record<string, string | null>;  // first docstring line per node (overview)
   nodeKinds: Record<string, "llm" | "manual">;  // llm = model/API call, manual = interrupt; absent = script
   edgeLabels: Record<string, string>;  // branch condition per conditional edge, keyed "src->tgt"
+  nodeSources: Record<string, { file: string; line: number }>;  // node def file:line for jump-to-source (P1-1)
 }
 
 export type NodeKind = "llm" | "manual" | "script";
@@ -54,8 +55,15 @@ export type NodeKind = "llm" | "manual" | "script";
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
   paused: null, snapshot: null, checkpoints: [], inputSchema: null, projectRoot: null,
-  tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {},
+  tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {}, nodeSources: {},
 };
+
+/** Short label for a source location, e.g. {file:"/a/b/graph.py",line:42} -> "graph.py:42".
+ *  Pure; used by the overview's jump-to-source affordance (P1-1). */
+export function sourceLabel(ref: { file: string; line: number }): string {
+  const base = ref.file.split(/[/\\]/).pop() || ref.file;
+  return `${base}:${ref.line}`;
+}
 
 /** Node kind: "manual" (pauses for a human paste via interrupt), "llm" (calls a
  *  model/API), or "script". Seeded from the worker's static scan, refined by runtime
@@ -216,6 +224,7 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
       return { ...state, nodes: ev.nodes, edges: ev.edges, error: null,
         inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null,
         nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds, edgeLabels: ev.edgeLabels ?? {},
+        nodeSources: ev.nodeSources ?? {},
         running: false, active: null, paused: null, pending: null, snapshot: null,
         tokens: {}, llmPending: {}, checkpoints: [] };
     }

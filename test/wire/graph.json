@@ -44,5 +44,15 @@
   },
   "edgeLabels": {
     "prepare->llm": "go"
+  },
+  "nodeSources": {
+    "prepare": {
+      "file": "/work/demo/graph.py",
+      "line": 12
+    },
+    "llm": {
+      "file": "/work/demo/graph.py",
+      "line": 18
+    }
   }
 }

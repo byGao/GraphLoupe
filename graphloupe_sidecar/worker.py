@@ -77,6 +77,27 @@ def _node_docs(drawable: Any) -> dict[str, str | None]:
     return docs
 
 
+def _node_sources(drawable: Any) -> dict[str, P.SourceRef]:
+    """Source location (file:line) per node, for jump-to-source (P1-1). Uses
+    inspect.getsourcefile + getsourcelines (line = the def line). Nodes whose function
+    has no resolvable source (lambda/builtin/C-ext/dynamic) are simply omitted."""
+    out: dict[str, P.SourceRef] = {}
+    for name, node in getattr(drawable, "nodes", {}).items():
+        if name in ("__start__", "__end__"):
+            continue
+        fn = _node_fn(node)
+        if not callable(fn):
+            continue
+        try:
+            file = inspect.getsourcefile(fn)
+            line = inspect.getsourcelines(fn)[1]
+        except (OSError, TypeError):
+            continue
+        if file:
+            out[name] = P.SourceRef(file=file, line=line)
+    return out
+
+
 def _refs_a_model(fn: Any) -> bool:
     """True if the node closes over / references a langchain model instance — the
     reliable LLM signal (models are usually captured in the node's closure)."""
@@ -574,6 +595,7 @@ def main() -> None:
             nodeDocs=_node_docs(g),
             nodeKinds=_node_kinds(g),
             edgeLabels=_edge_labels(g),
+            nodeSources=_node_sources(g),
         ).model_dump_json())
     except Exception as exc:  # import error / missing attr / build raises
         _emit(P.ErrorEvent(code="graph_load_failed",

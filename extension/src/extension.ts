@@ -222,6 +222,18 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
 </head><body><div id="root"></div><script src="${js}"></script></body></html>`;
 }
 
+/** P1-1: open a node's source file at its def line (1-based). A missing/unopenable
+ *  file gives a warning rather than an unhandled rejection. */
+async function openSource(file: string, line: number): Promise<void> {
+  try {
+    const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
+    const pos = new vscode.Position(Math.max(0, (line || 1) - 1), 0);
+    await vscode.window.showTextDocument(doc, { selection: new vscode.Range(pos, pos) });
+  } catch {
+    void vscode.window.showWarningMessage(`GraphLoupe: couldn't open source file: ${file}`);
+  }
+}
+
 async function pickFolder(field: string): Promise<void> {
   const picked = await vscode.window.showOpenDialog({
     canSelectFolders: true, canSelectFiles: false, canSelectMany: false, openLabel: "Use folder",
@@ -363,6 +375,10 @@ export function activate(context: vscode.ExtensionContext): void {
           if (msg && msg.type === "ui:restart") {  // Stop: abort the run by restarting the sidecar
             void Promise.resolve(vscode.commands.executeCommand("graphloupe.restartSidecar"))
               .then(undefined, (err) => console.error("[graphloupe] restart", err));
+            return;
+          }
+          if (msg && msg.type === "ui:openSource") {  // P1-1: jump to a node's source
+            void openSource(msg.file, msg.line).catch((err) => console.error("[graphloupe] openSource", err));
             return;
           }
           try {

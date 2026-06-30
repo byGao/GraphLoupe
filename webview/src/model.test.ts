@@ -1,9 +1,24 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { autoTab, buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, tokenSummary, topoOrder, type CanvasState } from "./model";
+import { autoTab, buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, tokenSummary, topoOrder, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
+
+describe("node source (P1-1)", () => {
+  it("graph event stores nodeSources; absent defaults to empty", () => {
+    const withSrc = reduce(initialState, ev({ type: "graph", nodes: ["n"], edges: [],
+      nodeSources: { n: { file: "/p/graph.py", line: 7 } } }));
+    expect(withSrc.nodeSources.n).toEqual({ file: "/p/graph.py", line: 7 });
+    const without = reduce(initialState, ev({ type: "graph", nodes: ["n"], edges: [] }));
+    expect(without.nodeSources).toEqual({});
+  });
+
+  it("sourceLabel shows basename:line for posix and windows paths", () => {
+    expect(sourceLabel({ file: "/work/demo/graph.py", line: 42 })).toBe("graph.py:42");
+    expect(sourceLabel({ file: "C:\\proj\\pipeline\\flow.py", line: 3 })).toBe("flow.py:3");
+  });
+});
 
 describe("canvas reducer", () => {
   it("graph event sets nodes and edges", () => {
@@ -17,6 +32,7 @@ describe("canvas reducer", () => {
       nodes: ["llm"], edges: [], active: null, running: true, error: null,
       pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
       projectRoot: null, tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {},
+      nodeSources: {},
     };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");

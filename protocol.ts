@@ -53,6 +53,9 @@ export const JsonSchema = z.object({
   properties: z.record(z.record(z.any())),
   required: z.array(z.string()).nullable(),
 });
+// Where a node's function is defined, for jump-to-source (P1-1). file = absolute path,
+// line = 1-based def line.
+export const SourceRef = z.object({ file: z.string(), line: z.number().int() });
 
 // ============================================================================
 // ServerEvent — sidecar -> extension
@@ -67,6 +70,7 @@ export const GraphTopology = z.object({
   nodeDocs: z.record(z.string().nullable()).nullable().default(null),
   nodeKinds: z.record(z.string()).nullable().default(null),
   edgeLabels: z.record(z.string()).nullable().default(null),
+  nodeSources: z.record(SourceRef).nullable().default(null),
 });
 export const RunStarted = z.object({
   ...env, type: z.literal("run_started"),

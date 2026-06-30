@@ -86,6 +86,13 @@ ErrorCode = Literal[
 # ============================================================================
 # ServerEvent — sidecar -> extension
 # ============================================================================
+class SourceRef(BaseModel):
+    # Where a node's function is defined, for "jump to source" (P1-1). file is an
+    # absolute path; line is the 1-based def line (inspect.getsourcelines).
+    file: str
+    line: int
+
+
 class GraphTopology(Envelope):
     # R1 execution view: get_graph() nodes/edges for the canvas. Added PHASE 1.
     type: Literal["graph"] = "graph"
@@ -108,6 +115,9 @@ class GraphTopology(Envelope):
     # Branch condition per conditional edge, keyed "src->tgt" (e.g. "gate->review":
     # "human"). From get_graph().edges[i].data. Added graph-autolayout.
     edgeLabels: dict[str, str] | None = None
+    # Source location per node (inspect file:line) for jump-to-source; absent per node
+    # when no source is resolvable (lambda/builtin/dynamic). Added P1-1 node-source.
+    nodeSources: dict[str, SourceRef] | None = None
 
 
 class RunStarted(Envelope):
