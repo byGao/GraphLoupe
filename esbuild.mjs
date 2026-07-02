@@ -1,7 +1,15 @@
 // Bundles the extension (node/cjs) and the webview (browser/iife) into dist/.
 import * as esbuild from "esbuild";
+import { readFileSync } from "node:fs";
 
-const shared = { bundle: true, sourcemap: true, logLevel: "info" };
+// GraphLoupe's own version (package.json → GitHub Release / .vsix), baked in for the
+// health panel; distinct from the langgraph version the worker reports.
+const version = JSON.parse(readFileSync(new URL("./package.json", import.meta.url), "utf8")).version;
+
+const shared = {
+  bundle: true, sourcemap: true, logLevel: "info",
+  define: { __GL_VERSION__: JSON.stringify(version) },
+};
 
 await esbuild.build({
   ...shared,

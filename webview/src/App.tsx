@@ -16,6 +16,11 @@ import type { ServerEvent } from "../../protocol";
 declare function acquireVsCodeApi(): { postMessage(msg: unknown): void };
 const vscode = acquireVsCodeApi();
 
+// GraphLoupe's own version (package.json → GitHub Release), baked in by esbuild; "dev"
+// under vitest/no-define. Distinct from the langgraph version the worker reports.
+declare const __GL_VERSION__: string;
+const GL_VERSION = typeof __GL_VERSION__ !== "undefined" ? __GL_VERSION__ : "dev";
+
 /** Post a StartRun with the graph's initial-state input object. */
 function sendRunObject(input: unknown): void {
   vscode.postMessage({ v: "0.1.0", corr: null, type: "start_run", threadId: null, input, providerMode: "manual" });
@@ -193,9 +198,11 @@ const HEALTH_ICON: Record<HealthCheck["status"], { mark: string; color: string }
 function HealthPanel({ checks, version }: { checks: HealthCheck[]; version: string | null }) {
   return (
     <div style={{ padding: 12 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
         <div style={{ color: "var(--pause)", fontWeight: 600, fontSize: 13 }}>Graph health</div>
-        {version && <div style={{ color: "#6e7681", fontSize: 11 }}>langgraph {version}</div>}
+        <div style={{ color: "#6e7681", fontSize: 11, textAlign: "right" }}>
+          GraphLoupe {GL_VERSION}{version ? ` · langgraph ${version}` : ""}
+        </div>
       </div>
       {checks.map((c, i) => {
         const ic = HEALTH_ICON[c.status];
