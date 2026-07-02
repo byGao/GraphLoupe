@@ -535,8 +535,13 @@ export default function App() {
         <button style={{ fontSize: 12 }} onClick={() => setShowOverview((o) => !o)}>⌑ Overview</button>
       </div>
       {state.error && (
-        <div style={{ padding: "8px 12px", background: "rgba(240,114,107,0.12)", borderBottom: "1px solid var(--danger)", color: "var(--danger)", fontSize: 13 }}>
-          ⚠ {state.error}
+        <div style={{ display: "flex", alignItems: "center", gap: 8, padding: "8px 12px", background: "rgba(240,114,107,0.12)", borderBottom: "1px solid var(--danger)", color: "var(--danger)", fontSize: 13 }}>
+          <span style={{ flex: 1 }}>⚠ {state.error}</span>
+          <button
+            title="Dismiss"
+            onClick={() => setState((s) => ({ ...s, error: null }))}
+            style={{ flex: "0 0 auto", background: "transparent", border: "none", color: "var(--danger)", cursor: "pointer", fontSize: 15, lineHeight: 1, padding: "0 4px" }}
+          >✕</button>
         </div>
       )}
 
