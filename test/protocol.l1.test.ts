@@ -7,7 +7,7 @@ import { ServerEvent, ClientCommand } from "../protocol";
 const here = fileURLToPath(new URL(".", import.meta.url));
 const wire = (n: string) => JSON.parse(readFileSync(`${here}wire/${n}.json`, "utf-8"));
 
-const serverCases = ["graph", "run_started", "node_start", "node_end", "run_finished"];
+const serverCases = ["graph", "run_started", "node_start", "node_end", "run_finished", "branch_decisions"];
 const clientCases = ["start_run"];
 
 describe("L1 round-trip (TS zod mirror)", () => {

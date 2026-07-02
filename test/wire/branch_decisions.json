@@ -1,0 +1,21 @@
+{
+  "v": "0.1.0",
+  "corr": null,
+  "type": "branch_decisions",
+  "threadId": "t1",
+  "decisions": [
+    {
+      "source": "gate",
+      "key": "approve",
+      "target": "synthesize",
+      "alternatives": {
+        "redo": "plan",
+        "abort": "__end__",
+        "approve": "synthesize"
+      },
+      "stateValues": {
+        "steps": 3
+      }
+    }
+  ]
+}

@@ -246,6 +246,26 @@ class CheckpointHistory(Envelope):
     checkpoints: list[CheckpointRef]
 
 
+class BranchDecision(BaseModel):
+    # One conditional-edge (router) decision, reconstructed from the checkpoint history
+    # (P1-3): at `source` the router chose `key` -> `target`. `key` is the router's returned
+    # branch key, reverse-mapped from the branch's end map (`alternatives`); None if that
+    # mapping is ambiguous. `stateValues` is the state the router saw.
+    source: NodeName
+    key: str | None
+    target: NodeName
+    alternatives: dict[str, NodeName]
+    stateValues: dict[str, Any]
+
+
+class BranchDecisions(Envelope):
+    # Router decisions for the run, reconstructed from the checkpoint lineage; emitted
+    # alongside CheckpointHistory (at each pause / run end). Added P1-3 branch-decision.
+    type: Literal["branch_decisions"] = "branch_decisions"
+    threadId: ThreadId
+    decisions: list[BranchDecision]
+
+
 class RunFinished(Envelope):
     type: Literal["run_finished"] = "run_finished"
     threadId: ThreadId
@@ -267,7 +287,7 @@ ServerEvent = Annotated[
     Union[
         GraphTopology, RunStarted, NodeStart, NodeEnd, LlmStart, LlmToken, LlmEnd,
         ToolStart, ToolEnd, ManualInferenceRequired, BreakpointHit,
-        StateSnapshotEvent, CheckpointHistory, RunFinished, ErrorEvent,
+        StateSnapshotEvent, CheckpointHistory, BranchDecisions, RunFinished, ErrorEvent,
     ],
     Field(discriminator="type"),
 ]

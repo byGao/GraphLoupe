@@ -12,7 +12,7 @@ import protocol as P
 
 WIRE = pathlib.Path(__file__).resolve().parent.parent / "test" / "wire"
 
-SERVER_CASES = ["graph", "run_started", "node_start", "node_end", "run_finished"]
+SERVER_CASES = ["graph", "run_started", "node_start", "node_end", "run_finished", "branch_decisions"]
 CLIENT_CASES = ["start_run"]
 
 

@@ -1,9 +1,33 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { autoTab, buildInput, defaultForm, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, tokenSummary, topoOrder, type CanvasState } from "./model";
+import { autoTab, branchRows, buildInput, defaultForm, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, tokenSummary, topoOrder, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
+
+describe("branch decisions (P1-3)", () => {
+  const decisions = [{
+    source: "gate", key: "approve", target: "synth",
+    alternatives: { approve: "synth", redo: "plan", abort: "__end__" }, stateValues: { steps: 3 },
+  }];
+
+  it("reduce stores decisions and clears them on run_started / graph", () => {
+    const s = reduce(initialState, ev({ v: "0.1.0", corr: null, type: "branch_decisions", threadId: "t", decisions }));
+    expect(s.branchDecisions).toHaveLength(1);
+    expect(reduce(s, ev({ v: "0.1.0", corr: null, type: "run_started", threadId: "t", runId: "t", checkpointId: null })).branchDecisions).toEqual([]);
+    expect(reduce(s, ev({ v: "0.1.0", corr: null, type: "graph", nodes: ["gate"], edges: [] })).branchDecisions).toEqual([]);
+  });
+
+  it("branchRows lists the taken key and the paths NOT taken", () => {
+    const [row] = branchRows({ ...initialState, branchDecisions: decisions });
+    expect(row).toMatchObject({ source: "gate", target: "synth", key: "approve" });
+    expect(row.notTaken).toEqual([{ key: "redo", target: "plan" }, { key: "abort", target: "__end__" }]);
+  });
+
+  it("no decisions -> empty rows", () => {
+    expect(branchRows(initialState)).toEqual([]);
+  });
+});
 
 describe("healthChecks (P0-5)", () => {
   const base = (over: Partial<CanvasState>): CanvasState => ({ ...initialState, ...over });

@@ -414,6 +414,53 @@ def _checkpoint_history(graph: Any, thread_id: str) -> str:
     return P.CheckpointHistory(threadId=thread_id, checkpoints=refs).model_dump_json()
 
 
+def _branch_ends(graph: Any) -> dict[str, dict[str, dict[str, str]]]:
+    """{source_node: {branch_name: {key: target}}} for the graph's conditional edges (P1-3).
+    Reads the compiled graph's builder.branches — framework internals (PIN); degrade to {}
+    if that structure changes so a branch we can't read never crashes a run."""
+    try:
+        branches = graph.builder.branches
+    except Exception:  # pragma: no cover - builder/branches shape may drift across versions
+        return {}
+    out: dict[str, dict[str, dict[str, str]]] = {}
+    for node, brs in branches.items():
+        for name, branch in brs.items():
+            ends = getattr(branch, "ends", None)
+            if ends:
+                out.setdefault(node, {})[name] = {str(k): str(v) for k, v in ends.items()}
+    return out
+
+
+def _branch_decisions(graph: Any, thread_id: str) -> str:
+    """Reconstruct router decisions from the committed checkpoint lineage (P1-3): for each
+    parent->child step the parent's `next` node RAN to produce the child; if that node is a
+    conditional source and the child's `next` (or __end__ at completion) is one of its
+    targets, record {source, key, target, alternatives, state}. The parent->child
+    correlation avoids mis-attributing a normal edge (ingest->plan) to a router that can
+    also reach that target (gate->plan)."""
+    ends_by_source = _branch_ends(graph)
+    decisions: list[P.BranchDecision] = []
+    if ends_by_source:
+        s = graph.get_state({"configurable": {"thread_id": thread_id}})
+        steps = 0
+        while s is not None and s.parent_config and steps < _HISTORY_LIMIT:
+            steps += 1
+            parent = graph.get_state(s.parent_config)
+            ran = parent.next[0] if parent.next else None      # node that ran to produce s
+            target = s.next[0] if s.next else "__end__"        # where it led (END at completion)
+            if ran in ends_by_source:
+                for ends in ends_by_source[ran].values():
+                    if target in ends.values():
+                        key = next((k for k, v in ends.items() if v == target), None)
+                        decisions.append(P.BranchDecision(
+                            source=ran, key=key, target=target, alternatives=ends,
+                            stateValues=_jsonsafe(s.values)))
+                        break
+            s = parent
+    decisions.reverse()  # oldest -> newest
+    return P.BranchDecisions(threadId=thread_id, decisions=decisions).model_dump_json()
+
+
 def _fork_target(graph: Any, thread_id: str, cmd: dict[str, Any]) -> dict[str, Any] | None:
     """Resolve a fork command into a resume config; emit checkpoint_not_found on a miss."""
     ckpt_id = cmd.get("checkpointId")
@@ -528,6 +575,8 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
         state = graph.get_state(cfg) if has_checkpointer else None
         if state is None or not state.next:
             _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="completed").model_dump_json())
+            if has_checkpointer:
+                _emit(_branch_decisions(graph, thread_id))  # router decisions for the run (P1-3)
             # a fork/time-travel run reports its final state so the UI can show the result
             if was_fork and state is not None:
                 fckpt = state.config["configurable"]["checkpoint_id"] if state.config else "-"
@@ -538,6 +587,7 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
             node, intr_id, val = intr
             _emit(_manual_required(thread_id, node, intr_id, val))
             _emit(_checkpoint_history(graph, thread_id))  # timeline for ◀ time-travel
+            _emit(_branch_decisions(graph, thread_id))  # router decisions so far (P1-3)
             outcome = await _await_resume(cmd_q, val, node, breakpoints, graph, thread_id)
             if outcome is _SHUTDOWN:
                 return

@@ -6,9 +6,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  autoTab, buildInput, defaultForm, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
+  autoTab, branchRows, buildInput, defaultForm, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
   overviewRows, reduce, sourceLabel, tokenSummary,
-  type CanvasState, type CheckpointRef, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
+  type BranchRow, type CanvasState, type CheckpointRef, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
@@ -221,6 +221,38 @@ function HealthPanel({ checks, version, python }: { checks: HealthCheck[]; versi
           </div>
         );
       })}
+    </div>
+  );
+}
+
+/** Branch decisions taken this run (P1-3): each conditional edge's chosen key -> target,
+ *  with the paths NOT taken listed beneath, so the "why did it go here?" is answered from
+ *  the committed checkpoint lineage rather than guessed from the graph shape. */
+function BranchPanel({ rows, hasCheckpointer }: { rows: BranchRow[]; hasCheckpointer: boolean | null }) {
+  if (rows.length === 0) {
+    const detail = hasCheckpointer === false
+      ? "No checkpointer — router decisions can't be reconstructed. Add compile(checkpointer=…)."
+      : "No branch decisions yet. Run a graph with conditional edges (add_conditional_edges) to see which paths it took.";
+    return <div className="gl-help" style={{ padding: 12 }}>{detail}</div>;
+  }
+  return (
+    <div style={{ padding: 12 }}>
+      <div style={{ color: "var(--pause)", fontWeight: 600, fontSize: 13, marginBottom: 10 }}>
+        Branch decisions <span style={{ color: "#6e7681", fontWeight: 400 }}>({rows.length})</span>
+      </div>
+      {rows.map((r, i) => (
+        <div key={i} style={{ marginBottom: 12, borderLeft: "2px solid var(--node)", paddingLeft: 10 }}>
+          <div style={{ fontSize: 12.5, color: "#eaf0f7", fontFamily: "var(--mono)" }}>
+            {r.source} <span style={{ color: "var(--node)" }}>→</span> {r.target}
+            {r.key != null && <span style={{ color: "#8b949e" }}>{"  "}({r.key})</span>}
+          </div>
+          {r.notTaken.length > 0 && (
+            <div style={{ color: "#6e7681", fontSize: 11, marginTop: 3, lineHeight: 1.5 }}>
+              not taken: {r.notTaken.map((a) => `${a.key} → ${a.target}`).join(" · ")}
+            </div>
+          )}
+        </div>
+      ))}
     </div>
   );
 }
@@ -556,11 +588,13 @@ export default function App() {
       : sendRun(inputText);
 
   const health = healthChecks(state);
+  const branches = branchRows(state);
   const TABS: { id: InspectorTab; label: string; dot?: boolean }[] = [
     { id: "run", label: "Input" },
     { id: "state", label: "State", dot: !!state.paused },
     { id: "tokens", label: "Tokens" },
     { id: "manual", label: "Manual", dot: !!state.pending },
+    { id: "branch", label: "Branch", dot: branches.length > 0 },
     { id: "health", label: "Health", dot: health.some((c) => c.status === "warn" || c.status === "error") },
   ];
 
@@ -715,6 +749,7 @@ export default function App() {
                 ? <ManualPanel pending={state.pending} />
                 : <div className="gl-help" style={{ padding: 12 }}>No pending manual inference. When a node calls interrupt(), its prompt appears here to copy → answer → resume.</div>
             )}
+            {tab === "branch" && <BranchPanel rows={branches} hasCheckpointer={state.hasCheckpointer} />}
             {tab === "health" && <HealthPanel checks={health} version={state.langgraphVersion} python={state.workerPython} />}
           </div>
         </div>

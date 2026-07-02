@@ -133,6 +133,19 @@ export const CheckpointHistory = z.object({
   ...env, type: z.literal("checkpoint_history"),
   threadId: z.string(), checkpoints: z.array(CheckpointRef),
 });
+// One conditional-edge (router) decision, reconstructed from the checkpoint history (P1-3):
+// at `source` the router chose `key` -> `target`; `alternatives` is the full {key: target} map.
+export const BranchDecision = z.object({
+  source: z.string(),
+  key: z.string().nullable(),
+  target: z.string(),
+  alternatives: z.record(z.string()),
+  stateValues: z.record(z.any()),
+});
+export const BranchDecisions = z.object({
+  ...env, type: z.literal("branch_decisions"),
+  threadId: z.string(), decisions: z.array(BranchDecision),
+});
 export const RunFinished = z.object({
   ...env, type: z.literal("run_finished"),
   threadId: z.string(), runId: z.string(),
@@ -146,7 +159,7 @@ export const ErrorEvent = z.object({
 export const ServerEvent = z.discriminatedUnion("type", [
   GraphTopology, RunStarted, NodeStart, NodeEnd, LlmStart, LlmToken, LlmEnd,
   ToolStart, ToolEnd, ManualInferenceRequired, BreakpointHit,
-  StateSnapshotEvent, CheckpointHistory, RunFinished, ErrorEvent,
+  StateSnapshotEvent, CheckpointHistory, BranchDecisions, RunFinished, ErrorEvent,
 ]);
 export type ServerEvent = z.infer<typeof ServerEvent>;
 

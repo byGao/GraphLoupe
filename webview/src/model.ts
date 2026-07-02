@@ -30,6 +30,17 @@ export interface Paused { node: string; checkpointId: string }
 /** One point on the time-travel timeline; `node` is what runs next from here. */
 export interface CheckpointRef { checkpointId: string; node: string | null }
 
+/** One router decision reconstructed from the checkpoint lineage (P1-3): at `source`
+ *  the conditional edge chose `key` -> `target`; `alternatives` is the full {key: target}
+ *  map so the panel can show the paths NOT taken. */
+export interface BranchDecision {
+  source: string;
+  key: string | null;
+  target: string;
+  alternatives: Record<string, string>;
+  stateValues: Record<string, unknown>;
+}
+
 export interface CanvasState {
   nodes: string[];
   edges: [string, string][];
@@ -40,6 +51,7 @@ export interface CanvasState {
   paused: Paused | null;          // stopped at a breakpoint (debugging)
   snapshot: Snapshot | null;      // state at the current pause
   checkpoints: CheckpointRef[];   // time-travel timeline (newest first); click one to rewind
+  branchDecisions: BranchDecision[];  // router decisions taken this run (oldest first) (P1-3)
   inputSchema: Record<string, unknown> | null;  // graph input JSON Schema for the run form
   projectRoot: string | null;     // project root the graph loaded from, for form defaults
   tokens: Record<string, NodeTokens>;  // per-node token tally for the current run (PHASE 4)
@@ -57,7 +69,7 @@ export type NodeKind = "llm" | "manual" | "script";
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
-  paused: null, snapshot: null, checkpoints: [], inputSchema: null, projectRoot: null,
+  paused: null, snapshot: null, checkpoints: [], branchDecisions: [], inputSchema: null, projectRoot: null,
   tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {}, nodeSources: {},
   hasCheckpointer: null, langgraphVersion: null, workerPython: null,
 };
@@ -204,7 +216,24 @@ export function tokenSummary(state: CanvasState): TokenSummary {
   };
 }
 
-export type InspectorTab = "run" | "state" | "tokens" | "manual" | "health";
+export type InspectorTab = "run" | "state" | "tokens" | "manual" | "health" | "branch";
+
+/** One row for the Branch panel (P1-3): the decision plus the alternatives NOT taken,
+ *  each labelled by its router key, so the user sees which paths were skipped. Pure. */
+export interface BranchRow {
+  source: string;
+  target: string;
+  key: string | null;
+  notTaken: { key: string; target: string }[];
+}
+export function branchRows(state: CanvasState): BranchRow[] {
+  return state.branchDecisions.map((d) => ({
+    source: d.source, target: d.target, key: d.key,
+    notTaken: Object.entries(d.alternatives)
+      .filter(([, tgt]) => tgt !== d.target)
+      .map(([k, tgt]) => ({ key: k, target: tgt })),
+  }));
+}
 
 export type HealthStatus = "ok" | "warn" | "info" | "error";
 export interface HealthCheck { label: string; status: HealthStatus; detail: string }
@@ -285,13 +314,15 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
         hasCheckpointer: ev.hasCheckpointer ?? null, langgraphVersion: ev.langgraphVersion ?? null,
         workerPython: ev.workerPython ?? null,
         running: false, active: null, paused: null, pending: null, snapshot: null,
-        tokens: {}, llmPending: {}, checkpoints: [] };
+        tokens: {}, llmPending: {}, checkpoints: [], branchDecisions: [] };
     }
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null,
-        checkpoints: [], tokens: {}, llmPending: {} };
+        checkpoints: [], branchDecisions: [], tokens: {}, llmPending: {} };
     case "checkpoint_history":
       return { ...state, checkpoints: ev.checkpoints };
+    case "branch_decisions":
+      return { ...state, branchDecisions: ev.decisions };
     case "llm_start":
       // buffer the call; its prompt is finalized at llm_end (exact if api_usage arrives).
       // observing a chat-model call marks this node as inference (persists across runs).
