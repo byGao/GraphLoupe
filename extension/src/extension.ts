@@ -174,7 +174,7 @@ async function discoverGraphs(context: vscode.ExtensionContext, projectRoot: str
   });
 }
 
-interface SymbolInfo { name: string; kind: string; line: number }
+interface SymbolInfo { name: string; kind: string; line: number; graphLike?: boolean }
 
 /** AST-scan one file for its module path + top-level symbols (P0-4; no code executed). */
 async function symbolsOf(
@@ -217,9 +217,18 @@ async function specifyGraphManually(
       "GraphLoupe: no top-level functions or variables found in that file.");
     return undefined;
   }
+  // Show the likely graph(s) — a factory or a `= …compile()` variable — and hide node
+  // functions / constants / builders. Fall back to every symbol when none look graph-like
+  // (e.g. `app = make()`), so the manual escape hatch still reaches indirect cases.
+  const candidates = info.symbols.filter((s) => s.graphLike);
+  const shown = candidates.length ? candidates : info.symbols;
   const sym = await vscode.window.showQuickPick(
-    info.symbols.map((s) => ({ label: s.name, description: s.kind, detail: `line ${s.line}` })),
-    { placeHolder: `Pick the graph in ${info.module} (a factory function or a compiled graph)` },
+    shown.map((s) => ({ label: s.name, description: s.kind, detail: `line ${s.line}` })),
+    {
+      placeHolder: candidates.length
+        ? `Pick the graph in ${info.module}`
+        : `No obvious graph in ${info.module} — pick a factory or compiled graph`,
+    },
   );
   if (!sym) return undefined;
   try {

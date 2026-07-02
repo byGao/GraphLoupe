@@ -49,9 +49,19 @@ def _calls_compile(func: ast.AST) -> bool:
     return False
 
 
+def _is_compiled_value(value: ast.AST | None) -> bool:
+    """True if `value` is a `.compile(...)` call — a module-level variable assigned from
+    it is very likely the compiled graph (e.g. `app = g.compile()`)."""
+    return (isinstance(value, ast.Call) and isinstance(value.func, ast.Attribute)
+            and value.func.attr == "compile")
+
+
 def list_symbols(file: str) -> list[dict[str, object]]:
     """Top-level symbols a user could point a graph entry at (P0-4 manual wizard):
-    function defs and module-level assignments. AST only — never executes the file."""
+    function defs and module-level assignments. AST only — never executes the file. Each
+    carries `graphLike`: a factory (known name / calls .compile()) or a variable assigned
+    from .compile() — so the picker can show the likely graph(s) first and hide node
+    functions / constants / builders."""
     try:
         tree = ast.parse(Path(file).read_text(encoding="utf-8"), filename=str(file))
     except (SyntaxError, UnicodeDecodeError, OSError):
@@ -59,13 +69,18 @@ def list_symbols(file: str) -> list[dict[str, object]]:
     out: list[dict[str, object]] = []
     for node in tree.body:
         if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
-            out.append({"name": node.name, "kind": "function", "line": node.lineno})
+            graph_like = node.name in KNOWN_FACTORY_NAMES or _calls_compile(node)
+            out.append({"name": node.name, "kind": "function", "line": node.lineno,
+                        "graphLike": graph_like})
         elif isinstance(node, ast.Assign):
+            graph_like = _is_compiled_value(node.value)
             for target in node.targets:
                 if isinstance(target, ast.Name):
-                    out.append({"name": target.id, "kind": "variable", "line": node.lineno})
+                    out.append({"name": target.id, "kind": "variable", "line": node.lineno,
+                                "graphLike": graph_like})
         elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
-            out.append({"name": node.target.id, "kind": "variable", "line": node.lineno})
+            out.append({"name": node.target.id, "kind": "variable", "line": node.lineno,
+                        "graphLike": _is_compiled_value(node.value)})
     return out
 
 

@@ -61,6 +61,41 @@ def test_list_symbols_functions_and_variables(tmp_path: Path) -> None:
     assert syms["app"] == "variable"
     # every entry carries a positive line number
     assert all(s["line"] > 0 for s in discover.list_symbols(str(f)))
+    # graphLike: the factory calls .compile() (True); `app = make()` is indirect (False) —
+    # the wizard falls back to showing all symbols when no candidate is graphLike.
+    gl = {s["name"]: s["graphLike"] for s in discover.list_symbols(str(f))}
+    assert gl["make"] is True
+    assert gl["app"] is False
+
+
+GRAPHLIKE_SRC = """\
+from langgraph.graph import StateGraph
+
+
+def _node(s):
+    return s
+
+
+def build_app():
+    g = StateGraph(dict)
+    return g.compile()
+
+
+_g = StateGraph(dict)
+compiled = _g.compile()
+CONST = {1, 2}
+"""
+
+
+def test_list_symbols_graphlike_flag(tmp_path: Path) -> None:
+    f = tmp_path / "g.py"
+    f.write_text(GRAPHLIKE_SRC, encoding="utf-8")
+    gl = {s["name"]: s["graphLike"] for s in discover.list_symbols(str(f))}
+    assert gl["build_app"] is True   # factory name + calls .compile()
+    assert gl["compiled"] is True    # variable assigned from _g.compile()
+    assert gl["_node"] is False      # node function
+    assert gl["_g"] is False         # builder (StateGraph), not compiled
+    assert gl["CONST"] is False      # constant
 
 
 @contextlib.contextmanager
