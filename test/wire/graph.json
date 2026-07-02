@@ -56,5 +56,6 @@
     }
   },
   "hasCheckpointer": true,
-  "langgraphVersion": "1.1.9"
+  "langgraphVersion": "1.1.9",
+  "workerPython": "/usr/bin/python3"
 }

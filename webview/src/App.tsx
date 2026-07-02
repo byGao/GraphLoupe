@@ -195,15 +195,20 @@ const HEALTH_ICON: Record<HealthCheck["status"], { mark: string; color: string }
 
 /** Health / compatibility checklist for the loaded graph (P0-5): what's wired up and
  *  what isn't, so the user doesn't discover it feature by feature. */
-function HealthPanel({ checks, version }: { checks: HealthCheck[]; version: string | null }) {
+function HealthPanel({ checks, version, python }: { checks: HealthCheck[]; version: string | null; python: string | null }) {
   return (
     <div style={{ padding: 12 }}>
-      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 10 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", gap: 8, marginBottom: 6 }}>
         <div style={{ color: "var(--pause)", fontWeight: 600, fontSize: 13 }}>Graph health</div>
         <div style={{ color: "#6e7681", fontSize: 11, textAlign: "right" }}>
           GraphLoupe {GL_VERSION}{version ? ` · langgraph ${version}` : ""}
         </div>
       </div>
+      {python && (
+        <div style={{ color: "#6e7681", fontSize: 10.5, marginBottom: 12, wordBreak: "break-all" }} title={python}>
+          running under {python}
+        </div>
+      )}
       {checks.map((c, i) => {
         const ic = HEALTH_ICON[c.status];
         return (
@@ -710,7 +715,7 @@ export default function App() {
                 ? <ManualPanel pending={state.pending} />
                 : <div className="gl-help" style={{ padding: 12 }}>No pending manual inference. When a node calls interrupt(), its prompt appears here to copy → answer → resume.</div>
             )}
-            {tab === "health" && <HealthPanel checks={health} version={state.langgraphVersion} />}
+            {tab === "health" && <HealthPanel checks={health} version={state.langgraphVersion} python={state.workerPython} />}
           </div>
         </div>
       </div>

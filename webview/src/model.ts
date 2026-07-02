@@ -50,6 +50,7 @@ export interface CanvasState {
   nodeSources: Record<string, { file: string; line: number }>;  // node def file:line for jump-to-source (P1-1)
   hasCheckpointer: boolean | null;  // graph compiled with a checkpointer? — debug availability (P0-5)
   langgraphVersion: string | null;  // langgraph version in the worker's interpreter (P0-5)
+  workerPython: string | null;      // interpreter running the graph (sys.executable) (P0-5)
 }
 
 export type NodeKind = "llm" | "manual" | "script";
@@ -58,7 +59,7 @@ export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
   paused: null, snapshot: null, checkpoints: [], inputSchema: null, projectRoot: null,
   tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {}, nodeSources: {},
-  hasCheckpointer: null, langgraphVersion: null,
+  hasCheckpointer: null, langgraphVersion: null, workerPython: null,
 };
 
 /** Short label for a source location, e.g. {file:"/a/b/graph.py",line:42} -> "graph.py:42".
@@ -282,6 +283,7 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
         nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds, edgeLabels: ev.edgeLabels ?? {},
         nodeSources: ev.nodeSources ?? {},
         hasCheckpointer: ev.hasCheckpointer ?? null, langgraphVersion: ev.langgraphVersion ?? null,
+        workerPython: ev.workerPython ?? null,
         running: false, active: null, paused: null, pending: null, snapshot: null,
         tokens: {}, llmPending: {}, checkpoints: [] };
     }

@@ -633,6 +633,7 @@ def main() -> None:
             nodeSources=_node_sources(g),
             hasCheckpointer=getattr(graph, "checkpointer", None) is not None,
             langgraphVersion=_langgraph_version(),
+            workerPython=sys.executable,
         ).model_dump_json())
     except Exception as exc:  # import error / missing attr / build raises
         _emit(P.ErrorEvent(code="graph_load_failed",

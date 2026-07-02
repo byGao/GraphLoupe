@@ -62,7 +62,7 @@ describe("canvas reducer", () => {
       nodes: ["llm"], edges: [], active: null, running: true, error: null,
       pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
       projectRoot: null, tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {},
-      nodeSources: {}, hasCheckpointer: null, langgraphVersion: null,
+      nodeSources: {}, hasCheckpointer: null, langgraphVersion: null, workerPython: null,
     };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");

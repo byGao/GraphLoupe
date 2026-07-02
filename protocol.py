@@ -123,6 +123,9 @@ class GraphTopology(Envelope):
     hasCheckpointer: bool | None = None
     # langgraph version in the worker's interpreter, for the health panel. Added P0-5.
     langgraphVersion: str | None = None
+    # The interpreter the worker runs as (sys.executable) — shows which Python (and thus
+    # which langgraph) is running the graph, so a wrong-venv is obvious. Added P0-5.
+    workerPython: str | None = None
 
 
 class RunStarted(Envelope):

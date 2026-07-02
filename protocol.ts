@@ -73,6 +73,7 @@ export const GraphTopology = z.object({
   nodeSources: z.record(SourceRef).nullable().default(null),
   hasCheckpointer: z.boolean().nullable().default(null),
   langgraphVersion: z.string().nullable().default(null),
+  workerPython: z.string().nullable().default(null),
 });
 export const RunStarted = z.object({
   ...env, type: z.literal("run_started"),
