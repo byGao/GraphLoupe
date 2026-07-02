@@ -222,13 +222,19 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
 </head><body><div id="root"></div><script src="${js}"></script></body></html>`;
 }
 
-/** P1-1: open a node's source file at its def line (1-based). A missing/unopenable
- *  file gives a warning rather than an unhandled rejection. */
+/** P1-1: open a node's source file at its def line (1-based), like go-to-definition —
+ *  beside the graph (watch + edit side by side) and in a reused preview tab so repeated
+ *  clicks jump within it instead of stacking new tabs. Missing/unopenable file -> warning,
+ *  not an unhandled rejection. */
 async function openSource(file: string, line: number): Promise<void> {
   try {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
     const pos = new vscode.Position(Math.max(0, (line || 1) - 1), 0);
-    await vscode.window.showTextDocument(doc, { selection: new vscode.Range(pos, pos) });
+    await vscode.window.showTextDocument(doc, {
+      selection: new vscode.Range(pos, pos),
+      viewColumn: vscode.ViewColumn.Beside,
+      preview: true,
+    });
   } catch {
     void vscode.window.showWarningMessage(`GraphLoupe: couldn't open source file: ${file}`);
   }
