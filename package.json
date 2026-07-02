@@ -63,6 +63,11 @@
           "type": "string",
           "default": "",
           "description": "Full path to the Python interpreter for the sidecar (needs the deps in requirements.lock). Empty = use the interpreter selected by the Python extension (ms-python.python), else fall back to py -3 / python3 / python on PATH."
+        },
+        "graphloupe.loadTimeout": {
+          "type": "number",
+          "default": 30,
+          "description": "Seconds to wait for your graph to load before reporting a failure. A cold import of langchain/langgraph (first run, or on OneDrive) can be slow — raise this if a large graph times out on load."
         }
       }
     }

@@ -35,7 +35,10 @@ def _project_root() -> str:
 
 
 def _load_timeout() -> float:
-    return float(os.environ.get("GRAPHLOUPE_LOAD_TIMEOUT", "10"))
+    # A real graph imports langchain/langgraph + the user's project; a COLD import
+    # (first run, fresh .pyc, OneDrive hydration on Windows) routinely exceeds 10s, so
+    # default generously. The extension overrides this from graphloupe.loadTimeout.
+    return float(os.environ.get("GRAPHLOUPE_LOAD_TIMEOUT", "30"))
 
 
 def _worker_python() -> str:
@@ -109,7 +112,10 @@ async def ws_endpoint(ws: WebSocket) -> None:
             first = await asyncio.wait_for(asyncio.to_thread(stdout.readline), timeout=_load_timeout())
         except asyncio.TimeoutError:
             proc.kill()
-            await ws.send_text(_graph_load_failed(f"load timed out after {_load_timeout()}s"))
+            await ws.send_text(_graph_load_failed(
+                f"load timed out after {_load_timeout()}s — a cold import of "
+                "langchain/langgraph can be slow the first time; retry, or raise "
+                "graphloupe.loadTimeout."))
             return
         if not first.strip():
             await ws.send_text(_graph_load_failed("worker exited during load"))

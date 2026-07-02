@@ -286,6 +286,9 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
   const env = { ...process.env };
   if (entry) env.GRAPHLOUPE_GRAPH = entry;
   if (projectRoot) env.GRAPHLOUPE_PROJECT_ROOT = projectRoot;
+  // A real graph's first (cold) langchain/langgraph import can exceed the old 10s;
+  // pass the configurable budget through to the sidecar's load-timeout.
+  env.GRAPHLOUPE_LOAD_TIMEOUT = String(cfg.get<number>("loadTimeout") ?? 30);
 
   setStatus({ t: "spawn" });
   stderrTail = [];
