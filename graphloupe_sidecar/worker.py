@@ -22,6 +22,7 @@ from __future__ import annotations
 import argparse
 import ast
 import asyncio
+import functools
 import importlib
 import inspect
 import json
@@ -77,15 +78,32 @@ def _node_docs(drawable: Any) -> dict[str, str | None]:
     return docs
 
 
+def _source_fn(fn: Any) -> Any:
+    """The user's own function behind a node callable, for source resolution.
+    LangGraph wraps a sync node as ``functools.partial(run_in_executor, None, user_fn)``
+    with ``@wraps(user_fn)`` — so ``partial.func`` is the langchain wrapper (wrong file),
+    but ``__wrapped__`` points at the user's function. Follow __wrapped__ first, then peel
+    a partial / bound method."""
+    try:
+        fn = inspect.unwrap(fn)  # follows __wrapped__ (functools.wraps)
+    except ValueError:  # pragma: no cover - broken __wrapped__ cycle
+        pass
+    if isinstance(fn, functools.partial):
+        for cand in (*fn.args, fn.func):  # prefer a wrapped user fn over the wrapper
+            if callable(cand) and not isinstance(cand, functools.partial):
+                return cand
+    return getattr(fn, "__func__", fn)  # bound method -> its function
+
+
 def _node_sources(drawable: Any) -> dict[str, P.SourceRef]:
     """Source location (file:line) per node, for jump-to-source (P1-1). Uses
-    inspect.getsourcefile + getsourcelines (line = the def line). Nodes whose function
-    has no resolvable source (lambda/builtin/C-ext/dynamic) are simply omitted."""
+    inspect.getsourcefile + getsourcelines (line = the def line) on the unwrapped user
+    function. Nodes with no resolvable source (lambda/builtin/C-ext/dynamic) are omitted."""
     out: dict[str, P.SourceRef] = {}
     for name, node in getattr(drawable, "nodes", {}).items():
         if name in ("__start__", "__end__"):
             continue
-        fn = _node_fn(node)
+        fn = _source_fn(_node_fn(node))
         if not callable(fn):
             continue
         try:
