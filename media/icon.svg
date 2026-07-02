@@ -1,0 +1,29 @@
+<svg viewBox="0 0 128 128" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="bgD1" x1="14" y1="8" x2="114" y2="120" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#18202a"/>
+      <stop offset="1" stop-color="#0b0f14"/>
+    </linearGradient>
+    <linearGradient id="lensD1" x1="30" y1="26" x2="86" y2="86" gradientUnits="userSpaceOnUse">
+      <stop offset="0" stop-color="#ffbd73" stop-opacity=".22"/>
+      <stop offset="1" stop-color="#ffa657" stop-opacity=".05"/>
+    </linearGradient>
+  </defs>
+  <rect width="128" height="128" rx="27" fill="url(#bgD1)"/>
+  <rect x="1.5" y="1.5" width="125" height="125" rx="25.5" fill="none" stroke="#2a3441" stroke-width="1.5"/>
+  <!-- handle -->
+  <line x1="84" y1="84" x2="110" y2="110" stroke="#ffa657" stroke-width="11" stroke-linecap="round"/>
+  <!-- lens -->
+  <circle cx="58" cy="58" r="35" fill="#0e1116"/>
+  <circle cx="58" cy="58" r="35" fill="url(#lensD1)" stroke="#ffa657" stroke-width="7"/>
+  <!-- centered mini-graph inside the lens -->
+  <g stroke="#3f5068" stroke-width="4.5" stroke-linecap="round">
+    <line x1="45" y1="44" x2="58" y2="58"/>
+    <line x1="58" y1="58" x2="74" y2="50"/>
+    <line x1="58" y1="58" x2="54" y2="76"/>
+  </g>
+  <circle cx="45" cy="44" r="6.5" fill="#6cb6ff"/>
+  <circle cx="74" cy="50" r="6.5" fill="#6cb6ff"/>
+  <circle cx="54" cy="76" r="6.5" fill="#6cb6ff"/>
+  <circle cx="58" cy="58" r="9" fill="#4cc38a"/>
+</svg>

@@ -3,261 +3,94 @@
 [![CI](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-**Debug a LangGraph graph at the node level.** Step through execution, inspect and
-diff state between nodes, time-travel from any checkpoint, count tokens per LLM
-node, and even pause a node to paste an answer from any chat (GitHub Copilot,
-ChatGPT, Claude) back in as the model's output. It runs as a VS Code extension
-with a Python FastAPI sidecar — **no account, no license, no cloud** — a
-self-hostable alternative to LangGraph Studio. Point it at a compiled LangGraph in
-your project and watch it render and run.
+**Debug a LangGraph graph at the node level, right in VS Code.** Step through a run,
+inspect and diff state between nodes, time-travel from any checkpoint, count tokens per
+LLM node — and even pause a node to paste an answer from any chat (Copilot, ChatGPT,
+Claude) back in as the model's output. A Python FastAPI sidecar runs your graph in
+isolation; **no account, no license, no cloud** — a self-hostable alternative to
+LangGraph Studio.
 
-> Built for the question: *"my LangGraph agent went down the wrong branch / cost
-> too many tokens / hung on a node — how do I see what happened, step by step?"*
+> Built for: *"my agent went down the wrong branch / cost too many tokens / hung on a
+> node — how do I see what happened, step by step?"*
 
 ![GraphLoupe debugging the showcase graph](docs/img/overview.png)
 
-*The showcase graph loaded: node list with kind badges on the left, the
-auto-laid-out canvas in the middle, and the Token-economy panel on the right.*
+📖 **Full documentation → https://bygao.github.io/GraphLoupe/** — getting started, and a
+copy-paste snippet for enabling every feature (checkpointer, manual inference, token
+economy, run-input form, jump-to-source…).
 
-## Can GraphLoupe…? (what people usually ask)
+## What it does
 
-- **Step through a LangGraph run and inspect the state between nodes?** Yes —
-  breakpoints on any node, a state snapshot + diff at each step, and single-stepping
-  (needs `compile(checkpointer=…)`).
-- **See the token cost of each node / each LLM call?** Yes — a Token-economy panel
-  with per-node prompt/completion counts and a run total (exact when the model
-  reports `usage_metadata`, otherwise a flagged estimate).
-- **Time-travel / replay a run from an earlier checkpoint?** Yes — fork any
-  checkpoint and re-run from there.
-- **Use GitHub Copilot (or ChatGPT / Claude / any chat) as the LLM provider?** Yes —
-  *manual inference*: a node pauses with `interrupt()`, you copy the rendered prompt,
-  paste it into any chat, paste the answer back, and the graph resumes with zero
-  state loss. Text and `tool_call` outputs both supported.
-- **Visualize a `StateGraph` and watch the active node as it runs?** Yes — ELK
-  orthogonal auto-layout, nodes coloured by kind (script vs ⚡ llm), conditional
-  branches and loops drawn distinctly, the running node lights up.
-- **Do all this without LangGraph Studio, a LangSmith account, or the cloud?** Yes —
-  it's MIT-licensed, runs entirely on your machine, and the IDE never imports your
-  graph (an isolated sidecar worker does).
+- **Step debugging** — breakpoints on any node, a state snapshot + diff at each step,
+  single-step, and time-travel (fork any checkpoint and re-run). Needs
+  `compile(checkpointer=…)`.
+- **Manual inference** *(the differentiator)* — a node pauses with `interrupt()`, you copy
+  the rendered prompt into any chat, paste the answer back, and the graph resumes with zero
+  state loss. Text and `tool_call` both supported.
+- **Token economy** — per-node prompt/completion counts + a run total (exact when the model
+  reports `usage_metadata`, else a flagged estimate).
+- **Visualization** — ELK orthogonal auto-layout, nodes coloured by kind (script vs ⚡ llm),
+  conditional branches and loops drawn distinctly, the running node lights up.
+- **Jump to source** — click a node's ↗ to open its function in your editor.
+- **Health panel** — one glance shows what's wired up (checkpointer, input schema, LLM
+  nodes, node source) and what isn't, with the langgraph version and interpreter in use.
+
+The IDE never imports your graph — an isolated sidecar worker does (static AST discovery
+never runs your code). 100 % local: the only traffic is a `localhost` WebSocket. No
+telemetry, no credentials requested or stored.
+
+## Install
+
+**From the VS Code Marketplace** *(coming soon)* — search "GraphLoupe" in the Extensions
+view, or `code --install-extension byGao.graphloupe`.
+
+**From a `.vsix` (sideload)** — download a release, or build it (`npm install && npm run
+package`), then Extensions view → `⋯` → **Install from VSIX…**.
+
+> The sidecar needs **Python with the deps in `requirements.lock`** on the interpreter you
+> point GraphLoupe at (the Python extension's selected interpreter, or `graphloupe.pythonPath`).
+> GraphLoupe creates its own managed environment for the sidecar and runs *your* graph in
+> *your* interpreter — see the [docs](https://bygao.github.io/GraphLoupe/).
+
+## Quick start (2 minutes)
+
+1. Open a folder in VS Code and press **Ctrl/Cmd+Shift+P → "GraphLoupe: Open Graph Panel"**.
+2. **"GraphLoupe: Select Graph"** — it AST-scans your project for a graph factory
+   (`build_graph` / `build_app` / …) or lets you point at a file + symbol manually. To just
+   try it, set the entry to **`graphloupe_sidecar.graph:showcase_graph`** (a built-in graph
+   that exercises every feature).
+3. **▶ Run.** Nodes light up; at the manual node the **Manual** tab opens with the prompt —
+   paste an answer to steer the flow. Set a breakpoint (click a node) to pause in **State**;
+   after a run the **Tokens** tab shows per-node counts; the **Health** tab shows what's set up.
+
+See the full [getting-started guide](https://bygao.github.io/GraphLoupe/) for connecting
+your own graph and enabling each feature.
 
 ## GraphLoupe vs LangGraph Studio
 
-Both visualize and run a LangGraph. GraphLoupe trades the polish of the hosted tool
-for **node-level depth, a manual-inference escape hatch, and zero-dependency
-self-hosting**.
+Both visualize and run a LangGraph. GraphLoupe trades the polish of the hosted tool for
+**node-level depth, a manual-inference escape hatch, and zero-dependency self-hosting**.
 
 | | GraphLoupe | LangGraph Studio |
 |---|---|---|
 | Where it runs | VS Code extension + local Python sidecar | Desktop/hosted app tied to LangSmith |
 | Account / license | **None** (MIT, fully local) | LangSmith account |
-| Inspection granularity | **Node-internal** events via `astream_events(v2)` — `on_chat_model_start/end`, tool events | Checkpoint-level |
-| Use any chat as the model | **Yes** — paste a Copilot/ChatGPT/Claude answer back to resume a paused node | No |
+| Inspection | **Node-internal** events (`astream_events` v2) | Checkpoint-level |
+| Any chat as the model | **Yes** — paste an answer back to resume a paused node | No |
 | Per-node token economy | **Yes**, built in | Via LangSmith traces |
-| Two-way canvas editing | No — read-only execution view (edit in code) | — |
 
-*(Positioning as of 2026, not a live feature audit — check each tool's current docs.)*
-
-## At a glance
-
-![GraphLoupe architecture](docs/img/architecture.png)
-
-The IDE never imports your graph. A FastAPI sidecar spawns an **isolated worker**
-that imports and runs it; events stream back over a frozen `protocol` contract.
-
-![Reading the canvas](docs/img/canvas-legend.png)
-
-The canvas is auto-laid out (ELK, orthogonal): nodes are coloured by kind
-(script vs ⚡ llm/inference), forward edges flow down, conditional branches are
-dashed + labelled, and loops route on the left with a ↺.
-
-### The showcase graph, running
-
-Open `graphloupe_sidecar.graph:showcase_graph` to exercise every feature at once
-(see [Quick start](#quick-start-the-feature-showcase)). The active node lights up
-as it runs and pauses at the manual node for your input:
-
-![showcase execution replay](docs/img/run-replay.gif)
-
-### Time travel
-
-At any pause the **State** tab shows the run's checkpoint timeline — the live path
-from the current node back to `__start__`. Click any earlier checkpoint to rewind
-and re-run from there (fork), so you can retry a node after changing course.
-
-![Time-travel checkpoint timeline](docs/img/time-travel.png)
-
-## Layout
-
-| Path | What |
-|------|------|
-| `protocol.py` / `protocol.ts` | the single cross-process contract (mirrors; L1 round-trip keeps them in sync) |
-| `graphloupe_sidecar/` | Python sidecar — `server.py` (FastAPI `/ws`), `worker.py` (isolated graph runner), `discover.py` (graph scan), `graph.py` (built-in demos) |
-| `extension/src/extension.ts` | VS Code extension host — spawns the sidecar, bridges WebSocket ↔ webview, commands |
-| `webview/src/` | React + React Flow canvas + manual-inference panel |
-| `scripts/quality_gate.py` | L0 (flake8 + mypy + bandit + PIN pytest) + L1 (vitest round-trip) |
+*(Positioning as of 2026, not a live feature audit.)*
 
 ## Trust & safety
 
-GraphLoupe is a debugger, so it loads and runs your graph — here's the boundary, in
-short (full threat model in [SECURITY.md](SECURITY.md)):
+100 % local, no telemetry, no phone-home. No API-key field; manual inference uses *your
+own* chat session. Discovery never runs your code (static AST); execution happens in an
+isolated sidecar subprocess. Process isolation guards against buggy/runaway graphs, **not
+deliberately malicious code** — point it at graphs you'd run yourself. Full threat model in
+[SECURITY.md](SECURITY.md).
 
-- **100 % local — no telemetry, no analytics, no phone-home.** The only network
-  traffic is a `localhost` WebSocket between the extension and the sidecar. Your code
-  and prompts never leave your machine.
-- **No credentials are requested or stored.** No API-key field; manual inference uses
-  *your own* chat session. If your graph calls a real model, it uses your project's
-  existing credentials — GraphLoupe doesn't touch them.
-- **Discovery never runs your code** (static AST scan); **execution** happens in an
-  **isolated sidecar subprocess**, not in your IDE.
-- **MIT-licensed, no install-time scripts.** Process isolation guards against buggy/
-  runaway graphs, *not* deliberately malicious code — so point it at graphs you'd run
-  yourself. See [SECURITY.md](SECURITY.md) for what's hardened and what's on the roadmap.
+## Contributing / from source
 
-## Install
-
-**From a `.vsix` (sideload)** — until the Marketplace listing lands:
-
-1. Get `graphloupe-<version>.vsix` — download a release, or build it:
-   `npm install && npm run package`.
-2. VS Code → **Extensions** view → `⋯` menu → **Install from VSIX…** → pick the file
-   (or `code --install-extension graphloupe-<version>.vsix`).
-3. **Ctrl/Cmd+Shift+P → "GraphLoupe: Open Graph Panel"**.
-
-> For now the sidecar still needs **Python with the deps in `requirements.lock`** on
-> your PATH. Automatic Python/venv setup is on the roadmap; a Marketplace listing is
-> planned.
-
-## Develop (run from source)
-
-Needs **Node 18+** and **Python** with the deps in `requirements.lock`.
-
-```bash
-npm install
-npm run build          # bundles extension + webview into dist/
-npm run package        # build a .vsix
-```
-
-## Quick start (the feature showcase)
-
-1. Open this folder (`apps/GraphLoupe`) in VS Code.
-2. Press **F5** → "Run GraphLoupe Extension" (an Extension Development Host opens).
-3. In the dev window: **Ctrl/Cmd+Shift+P → "GraphLoupe: Open Graph Panel"**.
-4. Set the graph entry to **`graphloupe_sidecar.graph:showcase_graph`** (Select Graph,
-   or `graphloupe.graphEntry` in settings) — a graph that exercises *every* feature.
-5. You should immediately see (no run needed): the graph auto-laid-out top-to-bottom,
-   nodes coloured by kind (**⚡ llm** `plan`/`review`/`synthesize` vs script
-   `ingest`/`gate`), a 3-way conditional from `gate` with a loop back to `plan`, a
-   left **overview** (click a row to focus that node) and a right **Inspector**
-   (Input / State / Tokens / Manual tabs).
-6. Click **▶ Run**. Nodes light up; at `review` the **Manual** tab opens with the
-   prompt — **your answer steers the flow**: type `redo` to re-plan (loops back to
-   `plan`), `abort` to stop, or anything else to proceed. Set a breakpoint (click a
-   node) to pause in the **State** tab; after a run the **Tokens** tab shows per-node
-   prompt/completion.
-
-> The simpler `graphloupe_sidecar.graph:build_graph` (prepare → llm) and
-> `…:manual_demo` are also available if you want a minimal graph.
-
-## Use it on YOUR graph
-
-GraphLoupe runs *your* compiled LangGraph — you never edit `settings.json` by hand.
-
-1. **Open your project folder in VS Code** (it becomes the project root; the picker
-   scans it). To point elsewhere, set `graphloupe.projectRoot`.
-2. **Ctrl/Cmd+Shift+P → "GraphLoupe: Select Graph"**. It AST-scans your project (no
-   code is executed) for a graph factory — a top-level function named
-   `build_graph` / `build_app` / `make_graph` / `create_graph`, **or** any function
-   that imports langgraph and calls `.compile()`. Pick one.
-   - The choice is saved to **your project's** `.vscode/settings.json`
-     (`graphloupe.graphEntry`, e.g. `pipeline.graph:build_app`) — per-workspace.
-3. **Fill the run-input form** above ▶ Run, then **▶ Run**. GraphLoupe reads your
-   graph's input schema (`get_input_jsonschema`) and renders a field per input:
-   path-like fields (`repo_path`, `out_dir`, …) get a **Browse…** folder picker,
-   others get typed inputs; list/dict fields default to empty. Toggle **JSON** for a
-   raw box if you'd rather hand-edit.
-4. Edit your graph, then **"GraphLoupe: Reload Graph"** to re-load and re-run.
-
-### Example — a real graph that needs input
-
-Say your project's `pipeline/graph.py` has `def build_app(): ... return g.compile()`
-and its first node reads `state["repo_path"]`. After Select Graph picks
-`pipeline.graph:build_app`, the form shows `repo_path` and `out_dir` with **Browse…**
-buttons and `target` as a text field (lists/dicts like `worklist`/`nodes` default to
-empty). Fill them and ▶ Run — no JSON needed. If a node still needs a key you left
-blank, the error banner names it (e.g. `run failed: KeyError: 'repo_path'`).
-
-## Make your graph read well in GraphLoupe
-
-GraphLoupe reads your graph **as written** — it never guesses. The more of these
-you do, the more it can show. None are required; each unlocks one thing.
-
-![Write this, GraphLoupe shows that](docs/img/authoring.png)
-
-| To get this in GraphLoupe | Write this in your graph |
-|---|---|
-| **Node purpose** (overview table + the line under each node) | A **docstring** on each node function. GraphLoupe shows its first line. |
-| **A node in the ⚡ llm / inference lane** | Have the node **reference your chat model** (a `BaseLanguageModel`/`BaseChatModel` it closes over or reads from a global), **or** call **`interrupt()` directly** in the node body. Both are detected at load. Indirect cases (model built in a helper, `interrupt` behind a wrapper) aren't seen statically but are reclassified once observed during a run. |
-| **Token economy counts** (prompt / completion per node) | **Invoke a chat model** inside the node. If the model returns `usage_metadata` (real APIs) the counts are exact (`api_usage`); otherwise GraphLoupe falls back to a char-based estimate (`sidecar_estimate`, shown with a `~` and a "relative comparison only" caveat). |
-| **Run-input form with field descriptions** | Give the graph a **Pydantic** input/state with `Field(description=…)`; GraphLoupe reads `get_input_jsonschema()` and shows the description under each field. A plain `TypedDict` yields field **names only** (no descriptions). Name path-like fields with `repo`/`dir`/`out`/`path`/`file` to get a **Browse…** picker. |
-| **Breakpoints / step / state diff / time-travel** | **`compile(checkpointer=…)`** (e.g. `MemorySaver()`). Without a checkpointer the graph runs to completion but cannot pause. |
-| **Manual-inference pause** (export prompt → paste answer → resume) | Call **`interrupt(payload)`** with the contract-shaped payload: `renderedText`, `messages`, `expects` (`"text"`/`"tool_call"`), `toolSchema`, `promptTokens`. See `manual_infer()` in `graphloupe_sidecar/graph.py` for the shape. |
-| **Discoverable by "Select Graph"** | Export a **top-level factory** returning a compiled graph, named `build_graph` / `build_app` / `make_graph` / `create_graph` (or any function that imports langgraph and calls `.compile()`). |
-
-`graphloupe_sidecar/graph.py:build_showcase` is a worked example that does all of the
-above — read it as the template.
-
-## Manual inference (the differentiator)
-
-![Manual inference flow](docs/img/manual-inference-flow.png)
-
-If a node pauses with `interrupt()` (a "ManualChatModel"), GraphLoupe turns the run
-into: **export the prompt → paste it into any chat (Copilot/ChatGPT/…) → paste the
-answer back → resume**, with zero state loss. Try the built-in
-`graphloupe_sidecar.graph:manual_demo`:
-
-1. Select Graph → `graphloupe_sidecar.graph:manual_demo` → ▶ Run.
-2. The **Manual inference** panel appears with the rendered prompt → **Copy prompt**.
-3. Paste it into any chat, get a response, paste it into the panel → **Send resume**.
-4. The graph continues from where it paused.
-
-`tool_call` nodes accept a JSON args paste; a bad paste is rejected
-(`tool_schema_validation` / `resume_kind_mismatch`) and the run stays paused so you
-can fix it.
-
-## Troubleshooting
-
-| Symptom | Meaning / fix |
-|---------|---------------|
-| "Select Graph" finds nothing | Your factory isn't named build_graph/build_app/… and doesn't call `.compile()` in a file importing langgraph. Rename it, or set `graphloupe.graphEntry` manually. |
-| Banner: `graph_load_failed: ...` | The entry couldn't import / has no such callable. The message names the cause. |
-| Banner: `run failed: KeyError: 'x'` | Your graph needs input key `x` — fill that field in the run-input form (or the JSON box). |
-| `No checkpointer set` (fixed) | A graph compiled without a checkpointer runs to completion but **cannot pause / manual-infer / time-travel** (those need `compile(checkpointer=…)`). |
-| Run looks stuck / too long | Set a **breakpoint** (click a node) to pause and step, or use **"GraphLoupe: Reload Graph"** to abort and restart. |
-| Canvas is a single lane | No node was classified `llm` — your nodes don't reference a model or call `interrupt()` (e.g. all stubs). That's correct; the second lane appears when a node actually infers. |
-
-## What works today
-
-![Four capabilities](docs/img/capabilities.png)
-
-- ✅ **Graph visualization** — ELK orthogonal auto-layout (edges never overlap or cut
-  through nodes), nodes coloured by kind (script vs ⚡ llm), conditional branches
-  labelled, loops routed on the left; sidebar overview (click to focus); active node
-  highlights.
-- ✅ **Step debugging** — breakpoints, state snapshot + diff, step, time-travel fork
-  (needs `compile(checkpointer=…)`).
-- ✅ **Manual inference** — interrupt → paste → resume (text + tool_call).
-- ✅ **Token economy panel** — per-node prompt/completion + run total + heaviest-node
-  hint (exact when the model reports usage, else a flagged estimate).
-- Copilot auto-path (`vscode.lm`) and a security sandbox for untrusted graphs are
-  on the backlog.
-
-![Step debugging flow](docs/img/debug-flow.png)
-
-## CLI checks (no VS Code needed)
-
-```bash
-python pin_dump.py                                   # framework-truth dump (== pin_dump.golden.txt)
-python -m graphloupe_sidecar.discover --project-root .  # what "Select Graph" would list
-python scripts/quality_gate.py                       # flake8 + mypy + bandit + pytest, then vitest
-npm run check                                        # typecheck + vitest + build
-```
+`npm install && npm run build`, then **F5** ("Run GraphLoupe Extension"). See the
+[docs](https://bygao.github.io/GraphLoupe/) for the architecture and dev workflow.
+MIT-licensed.

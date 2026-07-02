@@ -35,6 +35,10 @@ scratch*/**
 vitest.config.*
 CLAUDE.md
 
-# (kept implicitly: dist/**, graphloupe_sidecar/**.py, protocol.py,
-#  requirements.lock, README.md, LICENSE, SECURITY.md, docs/img/*.svg|*.png,
-#  package.json)
+# --- exclude: icon source + GitHub Pages docs site + publish runbook (not the package) ---
+media/*.svg
+docs/*.html
+PUBLISHING.md
+
+# (kept implicitly: dist/**, graphloupe_sidecar/**.py, protocol.py, requirements.lock,
+#  README.md, LICENSE, SECURITY.md, docs/img/*.png, media/icon.png, package.json)

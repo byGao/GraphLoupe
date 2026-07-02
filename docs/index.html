@@ -1,0 +1,232 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>GraphLoupe — Documentation</title>
+<style>
+  :root{ --bg:#0d1117; --panel:#161b22; --line:#21262d; --text:#c9d1d9; --muted:#8b949e;
+    --node:#4ea1ff; --accent:#ffa657; --go:#3fb950; --violet:#a371f7;
+    --mono:"SFMono-Regular",Consolas,"JetBrains Mono",ui-monospace,monospace;
+    --sans:system-ui,"Segoe UI",Roboto,sans-serif; }
+  *{box-sizing:border-box;margin:0;padding:0}
+  body{background:var(--bg);color:var(--text);font-family:var(--sans);line-height:1.7;font-size:16px}
+  .wrap{max-width:1040px;margin:0 auto;padding:0 20px;display:grid;grid-template-columns:220px 1fr;gap:36px}
+  header.top{border-bottom:1px solid var(--line);background:#0b0f14;position:sticky;top:0;z-index:5}
+  header.top .inner{max-width:1040px;margin:0 auto;padding:14px 20px;display:flex;align-items:center;gap:12px}
+  header.top img{width:30px;height:30px;border-radius:7px}
+  header.top b{font-size:16px;color:#eaf0f7}
+  header.top a.gh{margin-left:auto;color:var(--muted);text-decoration:none;font-size:14px}
+  nav.side{align-self:start;position:sticky;top:74px;padding-top:28px;font-size:14px}
+  nav.side a{display:block;color:var(--muted);text-decoration:none;padding:4px 0}
+  nav.side a:hover{color:var(--text)}
+  nav.side .grp{color:#6e7681;font-size:11px;letter-spacing:1px;text-transform:uppercase;margin:16px 0 4px}
+  main{padding:28px 0 80px;min-width:0}
+  h1{font-size:28px;color:#eaf0f7;margin-bottom:8px}
+  h2{font-size:21px;color:#eaf0f7;margin:34px 0 10px;padding-top:10px;border-top:1px solid var(--line)}
+  h3{font-size:16px;color:var(--accent);margin:20px 0 6px}
+  p{margin-bottom:12px;color:var(--text)}
+  a{color:var(--node)}
+  ul,ol{margin:0 0 14px 22px}
+  li{margin-bottom:6px}
+  code{font-family:var(--mono);font-size:13.5px;background:var(--panel);border:1px solid var(--line);
+    border-radius:4px;padding:1px 6px;color:#9ecbff}
+  pre{background:var(--panel);border:1px solid var(--line);border-radius:8px;padding:14px 16px;
+    overflow-x:auto;margin:10px 0 16px}
+  pre code{background:none;border:none;padding:0;color:#d6dde6;font-size:13.5px;line-height:1.6}
+  .lead{color:var(--muted);font-size:17px;margin-bottom:6px}
+  .note{background:#0e1f12;border-left:3px solid var(--go);padding:10px 14px;border-radius:6px;margin:12px 0;font-size:14.5px}
+  .warn{background:#1f1408;border-left:3px solid var(--accent);padding:10px 14px;border-radius:6px;margin:12px 0;font-size:14.5px}
+  table{width:100%;border-collapse:collapse;margin:12px 0 18px;font-size:14.5px}
+  th{text-align:left;color:var(--muted);border-bottom:1px solid var(--line);padding:8px 10px}
+  td{padding:8px 10px;border-bottom:1px solid var(--line);color:var(--muted);vertical-align:top}
+  td:first-child,th:first-child{color:var(--text)}
+  kbd{font-family:var(--mono);font-size:12px;background:#21262d;border:1px solid #30363d;border-bottom-width:2px;border-radius:4px;padding:1px 5px}
+  @media(max-width:820px){.wrap{grid-template-columns:1fr}nav.side{display:none}}
+</style>
+</head>
+<body>
+<header class="top"><div class="inner">
+  <img src="../media/icon.png" alt="GraphLoupe">
+  <b>GraphLoupe</b> <span style="color:var(--muted);font-size:13px">docs</span>
+  <a class="gh" href="https://github.com/byGao/GraphLoupe">GitHub ↗</a>
+</div></header>
+
+<div class="wrap">
+<nav class="side">
+  <div class="grp">Start</div>
+  <a href="#what">What it is</a>
+  <a href="#install">Install</a>
+  <a href="#connect">Connect your graph</a>
+  <div class="grp">Enable each feature</div>
+  <a href="#minimal">Minimal graph</a>
+  <a href="#debug">Step debugging</a>
+  <a href="#manual">Manual inference</a>
+  <a href="#tokens">Token economy</a>
+  <a href="#form">Run-input form</a>
+  <a href="#source">Jump to source</a>
+  <a href="#health">Health panel</a>
+  <div class="grp">More</div>
+  <a href="#troubleshoot">Troubleshooting</a>
+  <a href="#how">How it works</a>
+</nav>
+
+<main>
+  <h1>GraphLoupe documentation</h1>
+  <p class="lead">A self-hosted, node-level LangGraph debugger for VS Code. This page is the
+  copy-paste guide: how to install, connect your graph, and enable each feature.</p>
+
+  <h2 id="what">What it is</h2>
+  <p>GraphLoupe runs <em>your compiled LangGraph</em> and lets you step through it, inspect and
+  diff state between nodes, time-travel, count tokens per LLM node, and pause a node to paste an
+  answer from any chat back in as the model's output — all locally, no account or cloud. The IDE
+  never imports your graph; an isolated Python sidecar worker does.</p>
+
+  <h2 id="install">Install</h2>
+  <ol>
+    <li><b>From the Marketplace</b> (coming soon): search "GraphLoupe" in the Extensions view.</li>
+    <li><b>From a .vsix</b>: download a release (or build with <code>npm install &amp;&amp; npm run
+      package</code>), then Extensions view → <code>⋯</code> → <b>Install from VSIX…</b>.</li>
+  </ol>
+  <p><b>Python:</b> the sidecar needs Python with the deps in <code>requirements.lock</code>.
+  GraphLoupe resolves the interpreter in this order: <code>graphloupe.pythonPath</code> setting →
+  the Python extension's selected interpreter (<code>ms-python.python</code>) → <code>py -3</code> /
+  <code>python3</code> / <code>python</code> on PATH. It builds a managed environment for the sidecar
+  and runs <em>your graph</em> in <em>your</em> interpreter. The <b>Health</b> tab shows exactly which
+  interpreter and langgraph version are in use.</p>
+  <div class="warn">If load times out on the first run, that's a cold <code>langchain</code>/<code>langgraph</code>
+  import — retry, or raise <code>graphloupe.loadTimeout</code> (default 30s).</div>
+
+  <h2 id="connect">Connect your graph</h2>
+  <p><kbd>Ctrl/Cmd+Shift+P</kbd> → <b>GraphLoupe: Open Graph Panel</b>, then <b>GraphLoupe: Select
+  Graph</b>. It AST-scans your project (no code is run) for a graph factory. Pick one, or choose
+  <b>✎ Specify manually…</b> to point at a file + symbol (a factory function, or an already-compiled
+  graph exposed as a module variable). Your choice is saved to <code>.vscode/settings.json</code>
+  (<code>graphloupe.graphEntry</code>), per-workspace.</p>
+  <p>An entry is <code>module.path:callable</code>, e.g. <code>pipeline.graph:build_app</code>. To just
+  try everything, use the built-in <code>graphloupe_sidecar.graph:showcase_graph</code>.</p>
+
+  <h2 id="minimal">Minimal graph GraphLoupe can load</h2>
+  <p>Any file with a top-level factory that returns a <em>compiled</em> graph:</p>
+  <pre><code>from typing import TypedDict
+from langgraph.graph import START, END, StateGraph
+
+
+class State(TypedDict):
+    messages: list
+    steps: int
+
+
+def build_graph():
+    def prepare(state: State) -> dict:
+        """Seed the state (this docstring shows under the node)."""
+        return {"steps": state.get("steps", 0) + 1}
+
+    g = StateGraph(State)
+    g.add_node("prepare", prepare)
+    g.add_edge(START, "prepare")
+    g.add_edge("prepare", END)
+    return g.compile()</code></pre>
+  <p>A <b>docstring</b> on each node function shows as the node's purpose in the overview.</p>
+
+  <h2 id="debug">Step debugging — add a checkpointer</h2>
+  <p>Breakpoints, state snapshot + diff, single-step, and time-travel all need a checkpointer.
+  Compile with one:</p>
+  <pre><code>from langgraph.checkpoint.memory import MemorySaver
+
+def build_graph():
+    g = StateGraph(State)
+    # … add_node / add_edge …
+    return g.compile(checkpointer=MemorySaver())   # ← this line unlocks debugging</code></pre>
+  <ul>
+    <li><b>Breakpoint</b>: click a node → it pauses <em>before</em> that node on the next run.</li>
+    <li><b>State tab</b>: the checkpoint's state values + a diff from the previous step.</li>
+    <li><b>Step / Continue</b>: advance one node, or run to the next breakpoint.</li>
+    <li><b>Time-travel</b>: the State tab lists the run's checkpoints — click one to fork and re-run
+      from there.</li>
+  </ul>
+  <div class="note">No checkpointer? The graph still runs to completion and renders, but can't pause.
+  The <b>Health</b> tab flags this.</div>
+
+  <h2 id="manual">Manual inference — pause and paste an answer</h2>
+  <p>Turn "human + any chat" into a pluggable model. Call <code>interrupt()</code> with a
+  contract-shaped payload; the run pauses, you copy the prompt into ChatGPT/Copilot/Claude, paste
+  the answer back, and it resumes with zero state loss.</p>
+  <pre><code>from langgraph.types import interrupt
+
+def review(state: State) -> dict:
+    prompt = "Review this plan and reply 'redo' / 'abort' / anything to proceed."
+    answer = interrupt({
+        "renderedText": prompt,
+        "messages": [{"role": "human", "content": prompt, "name": None, "toolCallId": None}],
+        "expects": "text",          # or "tool_call"
+        "toolSchema": None,          # a JSON Schema when expects == "tool_call"
+        "promptTokens": {"prompt": 0, "completion": None, "source": "sidecar_estimate"},
+    })
+    return {"messages": [answer]}</code></pre>
+  <p>On a run, the <b>Manual</b> tab opens with the rendered prompt → <b>Copy prompt</b> → paste into
+  any chat → paste the reply back → <b>Send resume</b>. For <code>tool_call</code>, paste a JSON args
+  object; a bad paste is rejected and the run stays paused so you can fix it.</p>
+
+  <h2 id="tokens">Token economy — invoke a chat model in a node</h2>
+  <p>Any node that invokes a chat model shows per-node prompt/completion counts in the <b>Tokens</b>
+  tab. Exact when the model returns <code>usage_metadata</code> (real APIs), otherwise a flagged
+  <code>~</code> estimate.</p>
+  <pre><code>async def plan(state: State) -> dict:
+    reply = await model.ainvoke(state["messages"])   # model closed over / read from a global
+    return {"messages": [reply]}</code></pre>
+  <p>Referencing a <code>BaseChatModel</code> also puts the node in the ⚡ llm lane on the canvas.</p>
+
+  <h2 id="form">Run-input form — describe your inputs</h2>
+  <p>GraphLoupe reads <code>get_input_jsonschema()</code> and renders a field per input. Use a
+  <b>Pydantic</b> input/state with <code>Field(description=…)</code> to get hints under each field
+  (a plain <code>TypedDict</code> yields names only):</p>
+  <pre><code>from pydantic import BaseModel, Field
+
+class Input(BaseModel):
+    repo_path: str = Field(description="Path to the repo to analyze")
+    target: str = Field(description="What to summarize")</code></pre>
+  <p>Name path-like fields with <code>repo</code>/<code>dir</code>/<code>out</code>/<code>path</code>/<code>file</code>
+  to get a <b>Browse…</b> folder picker. Toggle <b>JSON</b> for a raw box.</p>
+
+  <h2 id="source">Jump to source</h2>
+  <p>Each node row in the left overview has a <b>↗</b> — click it to open that node's function in your
+  editor at its <code>def</code> line (beside the graph, reusing one tab). Works for functions
+  wrapped by langgraph too. Nothing to configure.</p>
+
+  <h2 id="health">Health panel</h2>
+  <p>The <b>Health</b> tab is a one-glance compatibility check of the loaded graph: whether it loaded,
+  whether it has a checkpointer (debugging), the run-input schema (and whether fields are described),
+  how many LLM/inference nodes, and node→source coverage — plus the <b>GraphLoupe version</b>, the
+  <b>langgraph version</b>, and the <b>interpreter</b> running your graph. If a graph fails to load,
+  it shows the cause here.</p>
+  <div class="note">Seeing an unexpected langgraph version? The Health tab shows which interpreter is
+  running the graph — if it isn't your project's venv, select it via <b>Python: Select Interpreter</b>
+  or set <code>graphloupe.pythonPath</code>.</div>
+
+  <h2 id="troubleshoot">Troubleshooting</h2>
+  <table>
+    <tr><th>Symptom</th><th>Fix</th></tr>
+    <tr><td>"Select Graph" finds nothing</td><td>Name your factory <code>build_graph</code>/<code>build_app</code>/…, or use <b>✎ Specify manually…</b>.</td></tr>
+    <tr><td><code>graph_load_failed: …</code></td><td>The entry couldn't import / has no such callable; the message names the cause. The Health tab shows it too.</td></tr>
+    <tr><td><code>run failed: KeyError: 'x'</code></td><td>Your graph needs input key <code>x</code> — fill that field in the run-input form.</td></tr>
+    <tr><td>Load timed out</td><td>Cold langchain/langgraph import — retry, or raise <code>graphloupe.loadTimeout</code>.</td></tr>
+    <tr><td>Missing dep (e.g. fastapi)</td><td>The doctor names the interpreter and the fix; install into that interpreter or pick another.</td></tr>
+    <tr><td>Can't pause / step</td><td>Compile with <code>checkpointer=…</code>. The Health tab flags a missing checkpointer.</td></tr>
+  </table>
+
+  <h2 id="how">How it works</h2>
+  <p>The VS Code extension hosts a Webview (React Flow canvas, read-only execution view) and spawns a
+  Python <b>sidecar</b> (FastAPI). The sidecar runs your graph in an <b>isolated worker</b> subprocess
+  and streams events back over a frozen <code>protocol</code> contract using
+  <code>astream_events(version="v2")</code>. Discovery is a static AST scan (never runs your code);
+  execution is isolated (guards against buggy graphs, not deliberately malicious code). 100 % local —
+  the only traffic is a <code>localhost</code> WebSocket. See
+  <a href="https://github.com/byGao/GraphLoupe/blob/main/SECURITY.md">SECURITY.md</a> for the threat model.</p>
+
+  <p style="margin-top:28px;color:var(--muted);font-size:14px;border-top:1px solid var(--line);padding-top:16px">
+    MIT-licensed · <a href="https://github.com/byGao/GraphLoupe">github.com/byGao/GraphLoupe</a></p>
+</main>
+</div>
+</body>
+</html>
