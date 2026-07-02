@@ -49,6 +49,34 @@ def _calls_compile(func: ast.AST) -> bool:
     return False
 
 
+def list_symbols(file: str) -> list[dict[str, object]]:
+    """Top-level symbols a user could point a graph entry at (P0-4 manual wizard):
+    function defs and module-level assignments. AST only — never executes the file."""
+    try:
+        tree = ast.parse(Path(file).read_text(encoding="utf-8"), filename=str(file))
+    except (SyntaxError, UnicodeDecodeError, OSError):
+        return []
+    out: list[dict[str, object]] = []
+    for node in tree.body:
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)):
+            out.append({"name": node.name, "kind": "function", "line": node.lineno})
+        elif isinstance(node, ast.Assign):
+            for target in node.targets:
+                if isinstance(target, ast.Name):
+                    out.append({"name": target.id, "kind": "variable", "line": node.lineno})
+        elif isinstance(node, ast.AnnAssign) and isinstance(node.target, ast.Name):
+            out.append({"name": node.target.id, "kind": "variable", "line": node.lineno})
+    return out
+
+
+def _module_of(file: str, root: str) -> str:
+    """Module path for a picked file; falls back to the file stem if it's outside root."""
+    try:
+        return _module_path(Path(file), Path(root))
+    except ValueError:
+        return Path(file).stem
+
+
 def discover(root: str) -> list[dict[str, object]]:
     root_path = Path(root)
     found: list[dict[str, object]] = []
@@ -79,8 +107,15 @@ def discover(root: str) -> list[dict[str, object]]:
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--project-root", required=True)
+    parser.add_argument("--symbols", help="a .py file: emit {module, symbols} for the entry wizard")
     args = parser.parse_args()
-    print(json.dumps(discover(args.project_root)))
+    if args.symbols:
+        print(json.dumps({
+            "module": _module_of(args.symbols, args.project_root),
+            "symbols": list_symbols(args.symbols),
+        }))
+    else:
+        print(json.dumps(discover(args.project_root)))
 
 
 if __name__ == "__main__":

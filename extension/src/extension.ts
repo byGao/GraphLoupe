@@ -10,9 +10,10 @@
 import * as vscode from "vscode";
 import { ChildProcess, spawn, spawnSync } from "node:child_process";
 import { AddressInfo, createServer } from "node:net";
-import { mkdirSync } from "node:fs";
+import { mkdirSync, writeFileSync } from "node:fs";
 import WebSocket from "ws";
 import { parseServerEvent } from "../../protocol";
+import { renderAdapter, ADAPTER_ENTRY } from "./entryWizard";
 import {
   initialStatus, nextStatus, statusLabel, spawnErrorMessage,
   type SidecarStatus, type SidecarEvent,
@@ -171,6 +172,65 @@ async function discoverGraphs(context: vscode.ExtensionContext, projectRoot: str
       }
     });
   });
+}
+
+interface SymbolInfo { name: string; kind: string; line: number }
+
+/** AST-scan one file for its module path + top-level symbols (P0-4; no code executed). */
+async function symbolsOf(
+  context: vscode.ExtensionContext, projectRoot: string, file: string,
+): Promise<{ module: string; symbols: SymbolInfo[] } | undefined> {
+  const py = await resolveInterpreter();
+  if (!py) return undefined;
+  return new Promise((resolve) => {
+    const proc = spawn(
+      py.command,
+      [...py.args, "-m", "graphloupe_sidecar.discover", "--project-root", projectRoot, "--symbols", file],
+      { cwd: context.extensionPath, env: process.env },
+    );
+    let out = "";
+    proc.stdout?.on("data", (d) => (out += d.toString()));
+    proc.on("error", () => resolve(undefined));
+    proc.on("close", () => {
+      try {
+        resolve(JSON.parse(out));
+      } catch {
+        resolve(undefined);
+      }
+    });
+  });
+}
+
+/** P0-4 manual entry wizard: pick a .py file + a top-level symbol, generate a
+ *  .graphloupe/entry.py adapter, and return the entry to save. undefined if cancelled. */
+async function specifyGraphManually(
+  context: vscode.ExtensionContext, projectRoot: string,
+): Promise<string | undefined> {
+  const picked = await vscode.window.showOpenDialog({
+    canSelectFiles: true, canSelectFolders: false, canSelectMany: false,
+    defaultUri: vscode.Uri.file(projectRoot), filters: { Python: ["py"] }, openLabel: "Use this file",
+  });
+  if (!picked || !picked[0]) return undefined;
+  const info = await symbolsOf(context, projectRoot, picked[0].fsPath);
+  if (!info || info.symbols.length === 0) {
+    void vscode.window.showWarningMessage(
+      "GraphLoupe: no top-level functions or variables found in that file.");
+    return undefined;
+  }
+  const sym = await vscode.window.showQuickPick(
+    info.symbols.map((s) => ({ label: s.name, description: s.kind, detail: `line ${s.line}` })),
+    { placeHolder: `Pick the graph in ${info.module} (a factory function or a compiled graph)` },
+  );
+  if (!sym) return undefined;
+  try {
+    const glDir = path.join(projectRoot, ".graphloupe");
+    mkdirSync(glDir, { recursive: true });
+    writeFileSync(path.join(glDir, "entry.py"), renderAdapter(info.module, sym.label), "utf8");
+  } catch (err) {
+    void vscode.window.showErrorMessage(`GraphLoupe: couldn't write the adapter: ${(err as Error).message}`);
+    return undefined;
+  }
+  return ADAPTER_ENTRY;
 }
 
 function freePort(): Promise<number> {
@@ -432,20 +492,24 @@ export function activate(context: vscode.ExtensionContext): void {
         return;
       }
       const entries = await discoverGraphs(context, projectRoot);
-      if (entries.length === 0) {
-        vscode.window.showWarningMessage(
-          "GraphLoupe: no build_graph() found. Name your entry build_graph, or set graphloupe.graphEntry manually.",
-        );
-        return;
-      }
-      const picked = await vscode.window.showQuickPick(
-        entries.map((e) => ({ label: e.entry, detail: e.file })),
-        { placeHolder: "Select a graph (a build_graph function in your project)" },
-      );
+      const MANUAL = "$(edit) Specify manually…";
+      const items: vscode.QuickPickItem[] = [
+        ...entries.map((e) => ({ label: e.entry, detail: e.file })),
+        { label: MANUAL, detail: "Point at a file + function/variable discovery didn't find" },
+      ];
+      const picked = await vscode.window.showQuickPick(items, {
+        placeHolder: entries.length
+          ? "Select a graph, or specify one manually"
+          : "No graph auto-discovered — specify one manually",
+      });
       if (!picked) return;
+      const entry = picked.label === MANUAL
+        ? await specifyGraphManually(context, projectRoot)
+        : picked.label;
+      if (!entry) return;
       await vscode.workspace
         .getConfiguration("graphloupe")
-        .update("graphEntry", picked.label, vscode.ConfigurationTarget.Workspace);
+        .update("graphEntry", entry, vscode.ConfigurationTarget.Workspace);
       if (!panel) {
         await vscode.commands.executeCommand("graphloupe.open");
       } else {

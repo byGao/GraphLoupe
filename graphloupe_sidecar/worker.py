@@ -26,6 +26,7 @@ import functools
 import importlib
 import inspect
 import json
+import os
 import sys
 import textwrap
 import threading
@@ -44,9 +45,16 @@ except Exception:  # pragma: no cover - langchain always present in practice
 
 def _add_project_root(root: str) -> None:
     """Put the user's project on sys.path so `entry` resolves against THEIR repo,
-    not the sidecar's own folder (workspace-load)."""
-    if root and root not in sys.path:
+    not the sidecar's own folder (workspace-load). Also put <root>/.graphloupe on the
+    path (in front) when it exists, so a generated adapter (P0-4 entry wizard) imports as
+    `entry` while its own `from <user module>` still resolves via root."""
+    if not root:
+        return
+    if root not in sys.path:
         sys.path.insert(0, root)
+    adapter_dir = os.path.join(root, ".graphloupe")
+    if os.path.isdir(adapter_dir) and adapter_dir not in sys.path:
+        sys.path.insert(0, adapter_dir)
 
 
 def _load(entry: str) -> Any:
