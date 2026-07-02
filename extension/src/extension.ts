@@ -222,17 +222,30 @@ function webviewHtml(webview: vscode.Webview, extensionUri: vscode.Uri): string 
 </head><body><div id="root"></div><script src="${js}"></script></body></html>`;
 }
 
-/** P1-1: open a node's source file at its def line (1-based), like go-to-definition —
- *  beside the graph (watch + edit side by side) and in a reused preview tab so repeated
- *  clicks jump within it instead of stacking new tabs. Missing/unopenable file -> warning,
- *  not an unhandled rejection. */
+/** The view column where `uri` is already open (any tab in any group), so we reveal that
+ *  editor instead of spawning a duplicate. Undefined if it isn't open anywhere. */
+function columnOf(uri: vscode.Uri): vscode.ViewColumn | undefined {
+  for (const group of vscode.window.tabGroups.all) {
+    for (const tab of group.tabs) {
+      if (tab.input instanceof vscode.TabInputText && tab.input.uri.fsPath === uri.fsPath) {
+        return group.viewColumn;
+      }
+    }
+  }
+  return undefined;
+}
+
+/** P1-1: open a node's source file at its def line (1-based), like go-to-definition. If the
+ *  file is already open in some group (even after the user re-arranged the layout), reveal
+ *  that editor and move the cursor there; otherwise open it beside the graph (watch + edit
+ *  side by side) in a reused preview tab. Missing/unopenable file -> warning, not a crash. */
 async function openSource(file: string, line: number): Promise<void> {
   try {
     const doc = await vscode.workspace.openTextDocument(vscode.Uri.file(file));
     const pos = new vscode.Position(Math.max(0, (line || 1) - 1), 0);
     await vscode.window.showTextDocument(doc, {
       selection: new vscode.Range(pos, pos),
-      viewColumn: vscode.ViewColumn.Beside,
+      viewColumn: columnOf(doc.uri) ?? vscode.ViewColumn.Beside,
       preview: true,
     });
   } catch {
