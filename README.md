@@ -1,5 +1,7 @@
 # GraphLoupe — a self-hosted LangGraph debugger for VS Code
 
+[![VS Marketplace](https://img.shields.io/visual-studio-marketplace/v/byGao.graphloupe?label=Marketplace&color=4ea1ff)](https://marketplace.visualstudio.com/items?itemName=byGao.graphloupe)
+[![Installs](https://img.shields.io/visual-studio-marketplace/i/byGao.graphloupe)](https://marketplace.visualstudio.com/items?itemName=byGao.graphloupe)
 [![CI](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml/badge.svg?branch=main)](https://github.com/byGao/GraphLoupe/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
@@ -41,8 +43,8 @@ telemetry, no credentials requested or stored.
 
 ## Install
 
-**From the VS Code Marketplace** *(coming soon)* — search "GraphLoupe" in the Extensions
-view, or `code --install-extension byGao.graphloupe`.
+**From the VS Code Marketplace** — search "GraphLoupe" in the Extensions view, or
+`code --install-extension byGao.graphloupe`.
 
 **From a `.vsix` (sideload)** — download a release, or build it (`npm install && npm run
 package`), then Extensions view → `⋯` → **Install from VSIX…**.
