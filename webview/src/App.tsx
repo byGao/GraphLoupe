@@ -6,9 +6,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  autoTab, buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind,
+  autoTab, buildInput, defaultForm, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
   overviewRows, reduce, sourceLabel, tokenSummary,
-  type CanvasState, type CheckpointRef, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
+  type CanvasState, type CheckpointRef, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
 } from "./model";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
@@ -181,6 +181,38 @@ function ManualPanel({ pending }: { pending: ManualRequest }) {
 /** Token economy panel (PHASE 4): per-node prompt/completion + run total, heaviest
  *  node flagged as the manual-optimization target. Hidden until a run emits LLM events
  *  (graphs with no LLM node simply show nothing). */
+const HEALTH_ICON: Record<HealthCheck["status"], { mark: string; color: string }> = {
+  ok: { mark: "✓", color: "var(--go)" },
+  warn: { mark: "!", color: "var(--pause)" },
+  info: { mark: "i", color: "#6cb6ff" },
+  error: { mark: "✕", color: "var(--danger)" },
+};
+
+/** Health / compatibility checklist for the loaded graph (P0-5): what's wired up and
+ *  what isn't, so the user doesn't discover it feature by feature. */
+function HealthPanel({ checks, version }: { checks: HealthCheck[]; version: string | null }) {
+  return (
+    <div style={{ padding: 12 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 10 }}>
+        <div style={{ color: "var(--pause)", fontWeight: 600, fontSize: 13 }}>Graph health</div>
+        {version && <div style={{ color: "#6e7681", fontSize: 11 }}>langgraph {version}</div>}
+      </div>
+      {checks.map((c, i) => {
+        const ic = HEALTH_ICON[c.status];
+        return (
+          <div key={i} style={{ display: "flex", gap: 8, marginBottom: 10 }}>
+            <span style={{ color: ic.color, flex: "0 0 auto", width: 12, textAlign: "center", fontWeight: 700 }}>{ic.mark}</span>
+            <div style={{ minWidth: 0 }}>
+              <div style={{ color: "#eaf0f7", fontSize: 12.5 }}>{c.label}</div>
+              <div style={{ color: "#8b949e", fontSize: 11, lineHeight: 1.45, marginTop: 2 }}>{c.detail}</div>
+            </div>
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TokenPanel({ state }: { state: CanvasState }) {
   const s = useMemo(() => tokenSummary(state), [state]);
   const [open, setOpen] = useState<string | null>(null);
@@ -511,11 +543,13 @@ export default function App() {
       ? sendRunObject(buildInput(state.inputSchema, form))
       : sendRun(inputText);
 
+  const health = healthChecks(state);
   const TABS: { id: InspectorTab; label: string; dot?: boolean }[] = [
     { id: "run", label: "Input" },
     { id: "state", label: "State", dot: !!state.paused },
     { id: "tokens", label: "Tokens" },
     { id: "manual", label: "Manual", dot: !!state.pending },
+    { id: "health", label: "Health", dot: health.some((c) => c.status === "warn" || c.status === "error") },
   ];
 
   return (
@@ -669,6 +703,7 @@ export default function App() {
                 ? <ManualPanel pending={state.pending} />
                 : <div className="gl-help" style={{ padding: 12 }}>No pending manual inference. When a node calls interrupt(), its prompt appears here to copy → answer → resume.</div>
             )}
+            {tab === "health" && <HealthPanel checks={health} version={state.langgraphVersion} />}
           </div>
         </div>
       </div>

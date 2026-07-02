@@ -48,6 +48,8 @@ export interface CanvasState {
   nodeKinds: Record<string, "llm" | "manual">;  // llm = model/API call, manual = interrupt; absent = script
   edgeLabels: Record<string, string>;  // branch condition per conditional edge, keyed "src->tgt"
   nodeSources: Record<string, { file: string; line: number }>;  // node def file:line for jump-to-source (P1-1)
+  hasCheckpointer: boolean | null;  // graph compiled with a checkpointer? — debug availability (P0-5)
+  langgraphVersion: string | null;  // langgraph version in the worker's interpreter (P0-5)
 }
 
 export type NodeKind = "llm" | "manual" | "script";
@@ -56,6 +58,7 @@ export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
   paused: null, snapshot: null, checkpoints: [], inputSchema: null, projectRoot: null,
   tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {}, nodeSources: {},
+  hasCheckpointer: null, langgraphVersion: null,
 };
 
 /** Short label for a source location, e.g. {file:"/a/b/graph.py",line:42} -> "graph.py:42".
@@ -200,7 +203,60 @@ export function tokenSummary(state: CanvasState): TokenSummary {
   };
 }
 
-export type InspectorTab = "run" | "state" | "tokens" | "manual";
+export type InspectorTab = "run" | "state" | "tokens" | "manual" | "health";
+
+export type HealthStatus = "ok" | "warn" | "info" | "error";
+export interface HealthCheck { label: string; status: HealthStatus; detail: string }
+
+const realNodeCount = (state: CanvasState): number =>
+  state.nodes.filter((n) => n !== "__start__" && n !== "__end__").length;
+
+/** Compatibility / health checklist derived from the loaded graph (P0-5): what's wired
+ *  up (checkpointer, input schema, LLM nodes, node source) and what isn't, so the user
+ *  sees it at a glance instead of discovering it feature by feature. Pure. */
+export function healthChecks(state: CanvasState): HealthCheck[] {
+  if (state.error) {
+    // graph_load_failed etc. — show the cause; don't false-ok the rest.
+    return [{ label: "Graph loaded", status: "error", detail: state.error }];
+  }
+  if (state.nodes.length === 0) {
+    return [{ label: "Graph loaded", status: "info", detail: "no graph selected yet" }];
+  }
+  const checks: HealthCheck[] = [
+    { label: "Graph loaded", status: "ok", detail: `${realNodeCount(state)} nodes · ${state.edges.length} edges` },
+  ];
+
+  if (state.hasCheckpointer === true) {
+    checks.push({ label: "Checkpointer", status: "ok", detail: "breakpoints / step / time-travel available" });
+  } else if (state.hasCheckpointer === false) {
+    checks.push({ label: "Checkpointer", status: "warn", detail: "none — runs to completion; can't pause / step / time-travel. Add compile(checkpointer=…)" });
+  }
+
+  const schema = state.inputSchema as { properties?: Record<string, unknown> } | null;
+  if (!schema) {
+    checks.push({ label: "Run input schema", status: "info", detail: "no schema — use the raw JSON box" });
+  } else {
+    const props = schema.properties && typeof schema.properties === "object" ? schema.properties : {};
+    const total = Object.keys(props).length;
+    const described = Object.values(props).filter(
+      (p) => p != null && typeof p === "object" && "description" in (p as object)).length;
+    checks.push(total > 0 && described < total
+      ? { label: "Run input schema", status: "warn", detail: `${total} field(s), ${described} described — add pydantic Field(description=…) for hints` }
+      : { label: "Run input schema", status: "ok", detail: `${total} field(s)` });
+  }
+
+  const llm = Object.values(state.nodeKinds).filter((k) => k === "llm" || k === "manual").length;
+  checks.push(llm > 0
+    ? { label: "LLM / inference nodes", status: "ok", detail: `${llm} — token economy / manual inference apply` }
+    : { label: "LLM / inference nodes", status: "info", detail: "none detected — script-only graph" });
+
+  const src = Object.keys(state.nodeSources).length;
+  checks.push(src > 0
+    ? { label: "Node → source", status: "ok", detail: `${src}/${realNodeCount(state)} nodes resolvable` }
+    : { label: "Node → source", status: "info", detail: "no source locations (dynamic / lambda nodes)" });
+
+  return checks;
+}
 
 /** Which inspector tab to surface: a manual-inference pause jumps to Manual, a
  *  breakpoint pause to State; otherwise keep whatever tab the user is on. */
@@ -225,6 +281,7 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
         inputSchema: ev.inputSchema ?? null, projectRoot: ev.projectRoot ?? null,
         nodeDocs: ev.nodeDocs ?? {}, nodeKinds: seededKinds, edgeLabels: ev.edgeLabels ?? {},
         nodeSources: ev.nodeSources ?? {},
+        hasCheckpointer: ev.hasCheckpointer ?? null, langgraphVersion: ev.langgraphVersion ?? null,
         running: false, active: null, paused: null, pending: null, snapshot: null,
         tokens: {}, llmPending: {}, checkpoints: [] };
     }

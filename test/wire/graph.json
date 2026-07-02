@@ -54,5 +54,7 @@
       "file": "/work/demo/graph.py",
       "line": 18
     }
-  }
+  },
+  "hasCheckpointer": true,
+  "langgraphVersion": "1.1.9"
 }

@@ -68,6 +68,15 @@ def _emit(line: str) -> None:
     sys.stdout.flush()
 
 
+def _langgraph_version() -> str | None:
+    """langgraph version in this (the user's) interpreter, for the health panel (P0-5)."""
+    try:
+        import importlib.metadata as md
+        return md.version("langgraph")
+    except Exception:  # pragma: no cover - langgraph always installed where a graph loads
+        return None
+
+
 def _node_fn(node: Any) -> Any:
     """The user's callable behind a compiled node (async lives in .afunc)."""
     data = getattr(node, "data", None)
@@ -622,6 +631,8 @@ def main() -> None:
             nodeKinds=_node_kinds(g),
             edgeLabels=_edge_labels(g),
             nodeSources=_node_sources(g),
+            hasCheckpointer=getattr(graph, "checkpointer", None) is not None,
+            langgraphVersion=_langgraph_version(),
         ).model_dump_json())
     except Exception as exc:  # import error / missing attr / build raises
         _emit(P.ErrorEvent(code="graph_load_failed",

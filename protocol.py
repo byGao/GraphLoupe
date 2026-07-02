@@ -118,6 +118,11 @@ class GraphTopology(Envelope):
     # Source location per node (inspect file:line) for jump-to-source; absent per node
     # when no source is resolvable (lambda/builtin/dynamic). Added P1-1 node-source.
     nodeSources: dict[str, SourceRef] | None = None
+    # Whether the compiled graph has a checkpointer — breakpoints / step / time-travel
+    # need one. None if unknown. Added P0-5 health-check.
+    hasCheckpointer: bool | None = None
+    # langgraph version in the worker's interpreter, for the health panel. Added P0-5.
+    langgraphVersion: str | None = None
 
 
 class RunStarted(Envelope):

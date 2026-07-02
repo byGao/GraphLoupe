@@ -1,9 +1,39 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { autoTab, buildInput, defaultForm, formFields, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, tokenSummary, topoOrder, type CanvasState } from "./model";
+import { autoTab, buildInput, defaultForm, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, tokenSummary, topoOrder, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
+
+describe("healthChecks (P0-5)", () => {
+  const base = (over: Partial<CanvasState>): CanvasState => ({ ...initialState, ...over });
+  const by = (checks: ReturnType<typeof healthChecks>, label: string) => checks.find((c) => c.label === label);
+
+  it("checkpointer present -> ok; absent -> warn", () => {
+    const ok = healthChecks(base({ nodes: ["a"], hasCheckpointer: true }));
+    expect(by(ok, "Checkpointer")?.status).toBe("ok");
+    const warn = healthChecks(base({ nodes: ["a"], hasCheckpointer: false }));
+    expect(by(warn, "Checkpointer")?.status).toBe("warn");
+  });
+
+  it("no input schema -> info; llm nodes counted", () => {
+    const checks = healthChecks(base({ nodes: ["a", "b"], inputSchema: null, nodeKinds: { a: "llm", b: "manual" } }));
+    expect(by(checks, "Run input schema")?.status).toBe("info");
+    expect(by(checks, "LLM / inference nodes")?.detail).toContain("2");
+  });
+
+  it("schema without field descriptions -> warn", () => {
+    const checks = healthChecks(base({ nodes: ["a"], inputSchema: { properties: { repo: { type: "string" } } } }));
+    expect(by(checks, "Run input schema")?.status).toBe("warn");
+  });
+
+  it("graph_load_failed -> a single error check, nothing false-ok", () => {
+    const checks = healthChecks(base({ error: "graph_load_failed: ImportError: no langchain" }));
+    expect(checks).toHaveLength(1);
+    expect(checks[0].status).toBe("error");
+    expect(checks.every((c) => c.status !== "ok")).toBe(true);
+  });
+});
 
 describe("node source (P1-1)", () => {
   it("graph event stores nodeSources; absent defaults to empty", () => {
@@ -32,7 +62,7 @@ describe("canvas reducer", () => {
       nodes: ["llm"], edges: [], active: null, running: true, error: null,
       pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
       projectRoot: null, tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {},
-      nodeSources: {},
+      nodeSources: {}, hasCheckpointer: null, langgraphVersion: null,
     };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
