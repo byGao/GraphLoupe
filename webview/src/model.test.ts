@@ -1,6 +1,6 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, tokenSummary, topoOrder, type CanvasState, type RunRecord } from "./model";
+import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, toggleCompare, tokenSummary, topoOrder, type CanvasState, type RunRecord } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
@@ -22,6 +22,13 @@ describe("run history (P1-4)", () => {
     const s = runSummary(mk({ nodePath: [], endedAt: null }));
     expect(s.path).toBe("(no nodes)");
     expect(s.durationMs).toBeNull();
+  });
+
+  it("toggleCompare adds, removes, and caps the selection at 2 (drops oldest)", () => {
+    expect(toggleCompare([], "a")).toEqual(["a"]);
+    expect(toggleCompare(["a"], "a")).toEqual([]);            // re-toggle removes
+    expect(toggleCompare(["a"], "b")).toEqual(["a", "b"]);
+    expect(toggleCompare(["a", "b"], "c")).toEqual(["b", "c"]);  // cap 2, oldest "a" dropped
   });
 });
 

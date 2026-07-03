@@ -7,9 +7,10 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
-  overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, tokenSummary,
+  overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, toggleCompare, tokenSummary,
   type BranchRow, type CanvasState, type CheckpointRef, type DiffEntry, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type RunRecord, type Snapshot, type StateStep,
 } from "./model";
+import { compareRuns } from "../../runhistory";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
 
@@ -332,39 +333,98 @@ const RUN_STATUS_COLOR: Record<string, string> = {
   completed: "#3fb950", aborted: "#f85149", error: "#f85149", interrupted: "#d29922", running: "#6cb6ff",
 };
 
-/** Run History (P1-4): past runs persisted to .graphloupe/runs.jsonl, newest first. Click a
- *  run to expand its node path / branches / tokens / error. Persists across reloads. */
+const runTime = (r: RunRecord) => new Date(r.startedAt).toLocaleTimeString();
+
+/** Compare two runs (P1-5): first divergence in the node path + per-metric deltas. */
+function ComparePanel({ a, b }: { a: RunRecord; b: RunRecord }) {
+  const c = compareRuns(a, b);
+  const d = c.firstDivergenceIndex;
+  const durLabel = c.durationDelta === null ? "—"
+    : `${c.durationDelta >= 0 ? "+" : ""}${(c.durationDelta / 1000).toFixed(1)}s`;
+  const row = (label: string, av: string, bv: string, changed: boolean) => (
+    <div style={{ display: "flex", gap: 8, fontSize: 11, marginTop: 3 }}>
+      <span style={{ color: "#6e7681", width: 62, flex: "0 0 auto" }}>{label}</span>
+      <span style={{ color: changed ? "#e6edf3" : "#8b949e" }}>{av}{av !== bv || changed ? ` → ${bv}` : ""}</span>
+    </div>
+  );
+  return (
+    <div style={{ border: "1px solid #3b4654", borderRadius: 6, padding: 10, marginBottom: 12, background: "#0e1116" }}>
+      <div style={{ fontSize: 12, marginBottom: 6, color: "#d6dde6" }}>
+        <strong>A</strong> <span style={{ color: "#6e7681" }}>{runTime(a)}</span> <span style={{ color: "#6e7681" }}>vs</span> <strong>B</strong> <span style={{ color: "#6e7681" }}>{runTime(b)}</span>
+      </div>
+      {c.pathIdentical
+        ? <div style={{ color: "#3fb950", fontSize: 11, marginBottom: 4 }}>✓ identical node path</div>
+        : (
+          <div style={{ marginBottom: 4 }}>
+            <div style={{ color: "#f0726b", fontSize: 11 }}>⑂ first divergence · step {(d ?? 0) + 1}</div>
+            <div style={{ color: "#8b949e", fontSize: 11, fontFamily: "var(--mono)", marginTop: 2 }}>
+              A: {a.nodePath[d ?? 0] ?? "(end)"} · B: {b.nodePath[d ?? 0] ?? "(end)"}
+            </div>
+          </div>
+        )}
+      {row("status", a.status, b.status, c.statusChanged)}
+      {row("nodes", String(a.nodePath.length), String(b.nodePath.length), a.nodePath.length !== b.nodePath.length)}
+      <div style={{ display: "flex", gap: 8, fontSize: 11, marginTop: 3 }}>
+        <span style={{ color: "#6e7681", width: 62, flex: "0 0 auto" }}>tokens</span>
+        <span style={{ color: c.tokensDelta === 0 ? "#8b949e" : c.tokensDelta > 0 ? "#7ee787" : "#f0726b" }}>
+          {a.tokens.prompt + a.tokens.completion} → {b.tokens.prompt + b.tokens.completion} (Δ {c.tokensDelta >= 0 ? "+" : ""}{c.tokensDelta})
+        </span>
+      </div>
+      <div style={{ display: "flex", gap: 8, fontSize: 11, marginTop: 3 }}>
+        <span style={{ color: "#6e7681", width: 62, flex: "0 0 auto" }}>duration</span>
+        <span style={{ color: "#8b949e" }}>Δ {durLabel}</span>
+      </div>
+      {row("input", c.inputChanged ? "changed" : "identical", c.inputChanged ? "changed" : "identical", false)}
+      {c.branchDiffs.length > 0 && (
+        <div style={{ fontSize: 11, marginTop: 4, color: "#6e7681" }}>branch diffs: {c.branchDiffs.length} position{c.branchDiffs.length === 1 ? "" : "s"}</div>
+      )}
+    </div>
+  );
+}
+
+/** Run History (P1-4/P1-5): past runs from .graphloupe/runs.jsonl, newest first. Click a run
+ *  to expand it; tick two runs to compare them (first divergence + deltas). */
 function HistoryPanel({ runs }: { runs: RunRecord[] }) {
   const [open, setOpen] = useState<string | null>(null);
+  const [cmp, setCmp] = useState<string[]>([]);
   if (runs.length === 0) {
     return <div className="gl-help" style={{ padding: 12 }}>No runs yet — run a graph. Finished runs are saved to <code>.graphloupe/runs.jsonl</code> and listed here.</div>;
   }
+  const a = runs.find((r) => r.runId === cmp[0]);
+  const b = runs.find((r) => r.runId === cmp[1]);
   return (
     <div style={{ padding: 12 }}>
       <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
         <div style={{ color: "var(--pause)", fontWeight: 600, fontSize: 13 }}>Run history</div>
-        <div style={{ color: "#6e7681", fontSize: 11 }}>{runs.length} run{runs.length === 1 ? "" : "s"} · .graphloupe/</div>
+        <div style={{ color: "#6e7681", fontSize: 11 }}>{runs.length} run{runs.length === 1 ? "" : "s"} · tick 2 to compare</div>
       </div>
+      {a && b && <ComparePanel a={a} b={b} />}
       {runs.map((r) => {
         const s = runSummary(r);
         const expanded = open === r.runId;
+        const checked = cmp.includes(r.runId);
         const dur = s.durationMs === null ? "—" : `${(s.durationMs / 1000).toFixed(1)}s`;
         return (
-          <div key={r.runId} style={{ marginBottom: 6, border: "1px solid #21262d", borderRadius: 6, overflow: "hidden" }}>
-            <button onClick={() => setOpen(expanded ? null : r.runId)}
-              style={{ width: "100%", textAlign: "left", background: expanded ? "#161b22" : "transparent", border: "none",
-                padding: "7px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
-              <span style={{ color: RUN_STATUS_COLOR[r.status] ?? "#8b949e", fontSize: 10.5, fontWeight: 700, flex: "0 0 auto", width: 66 }}>{r.status}</span>
-              <span style={{ color: "#8b949e", fontSize: 11, flex: "0 0 auto" }}>{new Date(r.startedAt).toLocaleTimeString()}</span>
-              <span style={{ color: "#6e7681", fontSize: 11, flex: "0 0 auto" }}>{dur} · {s.tokens} tok</span>
-              <span style={{ color: "#8b949e", fontSize: 11, marginLeft: "auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.nodePath.length} nodes</span>
-            </button>
+          <div key={r.runId} style={{ marginBottom: 6, border: `1px solid ${checked ? "#3fb950" : "#21262d"}`, borderRadius: 6, overflow: "hidden" }}>
+            <div style={{ display: "flex", alignItems: "stretch" }}>
+              <label title="compare" style={{ display: "flex", alignItems: "center", padding: "0 8px", cursor: "pointer" }}>
+                <input type="checkbox" checked={checked} onChange={() => setCmp((prev) => toggleCompare(prev, r.runId))} />
+              </label>
+              <button onClick={() => setOpen(expanded ? null : r.runId)}
+                style={{ flex: 1, textAlign: "left", background: expanded ? "#161b22" : "transparent", border: "none",
+                  padding: "7px 10px 7px 2px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+                <span style={{ color: RUN_STATUS_COLOR[r.status] ?? "#8b949e", fontSize: 10.5, fontWeight: 700, flex: "0 0 auto", width: 66 }}>{r.status}</span>
+                <span style={{ color: "#8b949e", fontSize: 11, flex: "0 0 auto" }}>{runTime(r)}</span>
+                <span style={{ color: "#6e7681", fontSize: 11, flex: "0 0 auto" }}>{dur} · {s.tokens} tok</span>
+                <span style={{ color: "#8b949e", fontSize: 11, marginLeft: "auto", whiteSpace: "nowrap" }}>{r.nodePath.length} nodes</span>
+              </button>
+            </div>
             {expanded && (
               <div style={{ padding: "6px 10px 10px", fontSize: 11, borderTop: "1px solid #21262d" }}>
                 <div style={{ marginBottom: 6 }}><span style={{ color: "#6e7681" }}>path: </span><span style={{ color: "#b69bff", fontFamily: "var(--mono)" }}>{s.path}</span></div>
                 {r.branches.length > 0 && (
                   <div style={{ marginBottom: 6 }}><span style={{ color: "#6e7681" }}>branches: </span>
-                    <span style={{ color: "#6cb6ff", fontFamily: "var(--mono)" }}>{r.branches.map((b) => `${b.source} → ${b.target}${b.key ? ` (${b.key})` : ""}`).join(" · ")}</span></div>
+                    <span style={{ color: "#6cb6ff", fontFamily: "var(--mono)" }}>{r.branches.map((br) => `${br.source} → ${br.target}${br.key ? ` (${br.key})` : ""}`).join(" · ")}</span></div>
                 )}
                 <div style={{ marginBottom: r.error ? 6 : 0, color: "#6e7681" }}>tokens: <span style={{ color: "#8b949e" }}>prompt {r.tokens.prompt} · completion {r.tokens.completion}</span></div>
                 {r.error && <div style={{ color: "#f85149", wordBreak: "break-word" }}>error: {r.error}</div>}

@@ -61,3 +61,54 @@ export function parseRunsFile(content: string, cap: number): RunRecord[] {
   const recs = content.split("\n").map(parseRunRecord).filter((r): r is RunRecord => r !== null);
   return recs.slice(-cap).reverse();
 }
+
+// ---- run comparison (P1-5) -------------------------------------------------
+/** One position where two runs' router decisions differ (aligned by index). */
+export interface BranchDiff { index: number; a: RunBranch | null; b: RunBranch | null }
+
+export interface RunComparison {
+  firstDivergenceIndex: number | null;  // first nodePath index where a and b differ (or where one ends); null if identical
+  pathIdentical: boolean;                // same nodes in the same order and length
+  tokensDelta: number;                   // b total − a total
+  durationDelta: number | null;          // b duration − a duration (ms); null if either run is unfinished
+  statusChanged: boolean;
+  inputChanged: boolean;
+  branchDiffs: BranchDiff[];             // positions where the branch decision differs
+}
+
+function sameBranch(a: RunBranch | null, b: RunBranch | null): boolean {
+  if (a === null || b === null) return a === b;
+  return a.source === b.source && a.key === b.key && a.target === b.target;
+}
+
+/** Compare two runs (P1-5): where their node paths first diverge, which branch decisions
+ *  differ, and the token / duration / status / input deltas. Pure; the UI renders it. */
+export function compareRuns(a: RunRecord, b: RunRecord): RunComparison {
+  const n = Math.min(a.nodePath.length, b.nodePath.length);
+  let div: number | null = null;
+  for (let i = 0; i < n; i++) {
+    if (a.nodePath[i] !== b.nodePath[i]) { div = i; break; }
+  }
+  if (div === null && a.nodePath.length !== b.nodePath.length) div = n;  // one path is a prefix of the other
+
+  const branchDiffs: BranchDiff[] = [];
+  const bn = Math.max(a.branches.length, b.branches.length);
+  for (let i = 0; i < bn; i++) {
+    const ba = a.branches[i] ?? null;
+    const bb = b.branches[i] ?? null;
+    if (!sameBranch(ba, bb)) branchDiffs.push({ index: i, a: ba, b: bb });
+  }
+
+  const dur = (r: RunRecord) => (r.endedAt === null ? null : r.endedAt - r.startedAt);
+  const da = dur(a), db = dur(b);
+  const total = (r: RunRecord) => r.tokens.prompt + r.tokens.completion;
+  return {
+    firstDivergenceIndex: div,
+    pathIdentical: div === null,
+    tokensDelta: total(b) - total(a),
+    durationDelta: da === null || db === null ? null : db - da,
+    statusChanged: a.status !== b.status,
+    inputChanged: JSON.stringify(a.input) !== JSON.stringify(b.input),
+    branchDiffs,
+  };
+}

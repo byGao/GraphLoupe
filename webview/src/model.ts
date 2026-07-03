@@ -244,6 +244,13 @@ export function runSummary(rec: RunRecord): RunRow {
   };
 }
 
+/** Toggle a run into/out of the compare selection (P1-5), capped at 2 — selecting a third
+ *  drops the oldest so the set is always the two most-recently picked. Pure. */
+export function toggleCompare(set: string[], id: string): string[] {
+  if (set.includes(id)) return set.filter((x) => x !== id);
+  return [...set, id].slice(-2);
+}
+
 /** Split the time-travel checkpoint list (newest first) into the current run and the older
  *  runs stacked beneath it (P1-2 UX): re-running the same thread appends prior runs' whole
  *  lineage, so "current" = head down to and including its first `__start__`. Pure. */
