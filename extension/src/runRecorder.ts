@@ -22,6 +22,7 @@ interface InProgress {
 export class RunRecorder {
   private pendingInput: Record<string, unknown> = {};
   private cur: InProgress | null = null;
+  private seq = 0;
 
   constructor(private readonly now: () => number = Date.now) {}
 
@@ -35,13 +36,19 @@ export class RunRecorder {
    *  tokens / error, and returns a finalized RunRecord on run_finished (null otherwise). */
   onEvent(ev: ServerEvent, entry: string): RunRecord | null {
     switch (ev.type) {
-      case "run_started":
+      case "run_started": {
+        // the worker reuses thread_id as its runId (same thread across runs, for fork /
+        // time-travel), so it is NOT unique per run — mint a unique id for the history
+        // record here (thread + start time + a session counter) so History/Compare can
+        // tell runs apart.
+        const startedAt = this.now();
         this.cur = {
-          runId: ev.runId, threadId: ev.threadId, entry, input: this.pendingInput,
-          startedAt: this.now(), nodePath: [], branches: [], prompt: 0, completion: 0, error: null,
+          runId: `${ev.runId}-${startedAt}-${this.seq++}`, threadId: ev.threadId, entry, input: this.pendingInput,
+          startedAt, nodePath: [], branches: [], prompt: 0, completion: 0, error: null,
         };
         this.pendingInput = {};
         return null;
+      }
       case "node_start":
         // collapse consecutive repeats (guards against double-emit; a real loop puts other
         // nodes in between, so it still shows plan…gate…plan)

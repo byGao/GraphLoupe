@@ -28,7 +28,7 @@ describe("RunRecorder (P1-4)", () => {
 
     const rec = r.onEvent(ev({ type: "run_finished", threadId: "run", runId: "r1", status: "completed", checkpointId: null }), ENTRY);
     expect(rec).not.toBeNull();
-    expect(rec!.runId).toBe("r1");
+    expect(rec!.runId).toBe("r1-1000-0");  // minted unique id: <workerRunId>-<startedAt>-<seq>
     expect(rec!.entry).toBe(ENTRY);
     expect(rec!.input).toEqual({ topic: "hi" });
     expect(rec!.nodePath).toEqual(["ingest", "plan", "review", "gate", "synthesize"]);
@@ -61,5 +61,15 @@ describe("RunRecorder (P1-4)", () => {
   it("returns null on run_finished with no open run", () => {
     const r = new RunRecorder(clock());
     expect(r.onEvent(ev({ type: "run_finished", threadId: "run", runId: "x", status: "completed", checkpointId: null }), ENTRY)).toBeNull();
+  });
+
+  it("mints a DISTINCT runId per run even when the worker reuses the same runId/thread", () => {
+    const r = new RunRecorder(clock());
+    const finish = () => {
+      r.onEvent(ev({ type: "run_started", threadId: "run", runId: "run", checkpointId: null }), ENTRY);
+      return r.onEvent(ev({ type: "run_finished", threadId: "run", runId: "run", status: "completed", checkpointId: null }), ENTRY)!;
+    };
+    const a = finish(), b = finish();
+    expect(a.runId).not.toBe(b.runId);  // both came from worker runId "run" but records differ
   });
 });
