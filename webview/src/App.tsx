@@ -10,7 +10,7 @@ import {
   overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, toggleCompare, tokenSummary,
   type BranchRow, type CanvasState, type CheckpointRef, type DiffEntry, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type RunRecord, type Snapshot, type StateStep,
 } from "./model";
-import { compareRuns } from "../../runhistory";
+import { compareRuns, type RunBranch } from "../../runhistory";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
 
@@ -335,6 +335,11 @@ const RUN_STATUS_COLOR: Record<string, string> = {
 
 const runTime = (r: RunRecord) => new Date(r.startedAt).toLocaleTimeString();
 
+/** A run's router decision as "source → target (key)", or "—" when that run had no decision
+ *  at this position (paths of different length). */
+const fmtBranch = (b: RunBranch | null): string =>
+  b ? `${b.source} → ${b.target}${b.key ? ` (${b.key})` : ""}` : "—";
+
 /** Compare two runs (P1-5): first divergence in the node path + per-metric deltas. */
 function ComparePanel({ a, b }: { a: RunRecord; b: RunRecord }) {
   const c = compareRuns(a, b);
@@ -376,7 +381,16 @@ function ComparePanel({ a, b }: { a: RunRecord; b: RunRecord }) {
       </div>
       {row("input", c.inputChanged ? "changed" : "identical", c.inputChanged ? "changed" : "identical", false)}
       {c.branchDiffs.length > 0 && (
-        <div style={{ fontSize: 11, marginTop: 4, color: "#6e7681" }}>branch diffs: {c.branchDiffs.length} position{c.branchDiffs.length === 1 ? "" : "s"}</div>
+        <div style={{ marginTop: 6 }}>
+          <div style={{ color: "#6e7681", fontSize: 11, marginBottom: 2 }}>branch decisions differ:</div>
+          {c.branchDiffs.map((d, i) => (
+            <div key={i} style={{ fontSize: 11, fontFamily: "var(--mono)", marginTop: 2 }}>
+              <span style={{ color: "#3fb950", fontWeight: 700 }}>A</span> {fmtBranch(d.a)}
+              <span style={{ color: "#6e7681" }}>{"   "}</span>
+              <span style={{ color: "#e3b341", fontWeight: 700 }}>B</span> {fmtBranch(d.b)}
+            </div>
+          ))}
+        </div>
       )}
     </div>
   );
