@@ -27,11 +27,16 @@ def _py(*args: str) -> None:
 
 
 def _run_l0() -> None:
-    """L0: lint (flake8) + types (mypy) + security (bandit) + PIN tests (pytest)."""
+    """L0: lint (flake8) + types (mypy + tsc) + security (bandit) + PIN tests (pytest).
+
+    tsc typechecks the whole TS side (extension + webview + protocol.ts + tests) — esbuild
+    only transpiles and vitest erases types, so without this a type error ships silently.
+    """
     lint_targets = ["graphloupe_sidecar", "protocol.py", "pin_dump.py", "scripts", "tests"]
     ship_targets = ["graphloupe_sidecar", "protocol.py", "pin_dump.py"]
     _py("-m", "flake8", *lint_targets)
     _py("-m", "mypy", *ship_targets, "--ignore-missing-imports")
+    subprocess.run("npm run typecheck", cwd=APP_DIR, shell=True, check=True)  # tsc --noEmit (TS side)
     _py("-m", "bandit", "-rq", *ship_targets)
     _py("-m", "pytest", "tests/", "-q")
 

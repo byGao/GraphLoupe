@@ -131,12 +131,8 @@ describe("canvas reducer", () => {
   });
 
   it("node_start highlights, node_end clears", () => {
-    let s: CanvasState = {
-      nodes: ["llm"], edges: [], active: null, running: true, error: null,
-      pending: null, paused: null, snapshot: null, checkpoints: [], inputSchema: null,
-      projectRoot: null, tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {},
-      nodeSources: {}, hasCheckpointer: null, langgraphVersion: null, workerPython: null,
-    };
+    // spread initialState so new CanvasState fields don't have to be repeated here
+    let s: CanvasState = { ...initialState, nodes: ["llm"], running: true };
     s = reduce(s, ev({ type: "node_start", node: "llm" }));
     expect(s.active).toBe("llm");
     s = reduce(s, ev({ type: "node_end", node: "llm" }));
