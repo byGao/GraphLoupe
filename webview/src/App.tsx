@@ -800,12 +800,13 @@ export default function App() {
 
         {/* right inspector */}
         <div style={{ width: 330, flex: "0 0 330px", borderLeft: "1px solid var(--line)", background: "var(--surface)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-          <div style={{ display: "flex", borderBottom: "1px solid var(--line)" }}>
+          {/* wrap to a second row: 7 tabs can't fit one row in a 330px panel without clipping */}
+          <div style={{ display: "flex", flexWrap: "wrap", borderBottom: "1px solid var(--line)" }}>
             {TABS.map((t) => (
               <button key={t.id} onClick={() => setTab(t.id)}
                 style={{
-                  flex: 1, border: "none", borderRadius: 0, background: tab === t.id ? "var(--surface-2)" : "transparent",
-                  color: tab === t.id ? "var(--text)" : "var(--muted)", padding: "7px 4px", fontSize: 12,
+                  flex: "1 1 56px", border: "none", borderRadius: 0, background: tab === t.id ? "var(--surface-2)" : "transparent",
+                  color: tab === t.id ? "var(--text)" : "var(--muted)", padding: "7px 4px", fontSize: 12, whiteSpace: "nowrap",
                   borderBottom: tab === t.id ? "2px solid var(--node)" : "2px solid transparent",
                 }}>
                 {t.label}{t.dot ? " ●" : ""}
