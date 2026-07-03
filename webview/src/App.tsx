@@ -7,7 +7,7 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
-  overviewRows, reduce, sourceLabel, tokenSummary,
+  overviewRows, reduce, sourceLabel, splitCurrentRun, tokenSummary,
   type BranchRow, type CanvasState, type CheckpointRef, type DiffEntry, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type Snapshot, type StateStep,
 } from "./model";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
@@ -61,37 +61,51 @@ function postCmd(msg: Record<string, unknown>): void {
 }
 
 // Time-travel timeline: every checkpoint on the thread (newest first). Click one to
-// rewind — the worker forks from it and re-runs to the next pause.
+// rewind — the worker forks from it and re-runs to the next pause. Re-running the same
+// thread stacks prior runs onto the lineage, so by default only the CURRENT run is shown
+// (head down to its `before __start__`); older runs collapse behind a toggle.
 function CheckpointTimeline({ checkpoints }: { checkpoints: CheckpointRef[] }) {
+  const [showOlder, setShowOlder] = useState(false);
+  const { current, older } = splitCurrentRun(checkpoints);
+  const shown = showOlder ? checkpoints : current;
+
+  const row = (c: CheckpointRef, i: number) => {
+    const now = i === 0;  // newest = the current head
+    return (
+      <button key={c.checkpointId}
+        disabled={now}
+        onClick={() => postCmd({ type: "fork", threadId: "run", checkpointId: c.checkpointId })}
+        title={now ? "current position" : `rewind to before ${c.node ?? "end"}`}
+        style={{
+          display: "flex", alignItems: "center", gap: 8, textAlign: "left",
+          border: "none", borderRadius: 4, padding: "4px 8px", fontSize: 12,
+          background: now ? "var(--surface-2)" : "transparent",
+          color: now ? "var(--text)" : "var(--muted)",
+          cursor: now ? "default" : "pointer",
+        }}>
+        <span style={{ color: now ? "var(--pause)" : "#6e7681" }}>{now ? "▶" : "↩"}</span>
+        <span style={{ flex: 1 }}>{c.node ? `before ${c.node}` : "end"}</span>
+        {/* show the suffix: time-ordered uuids share a prefix, so the head differs */}
+        <span style={{ color: "#6e7681", fontFamily: "monospace", fontSize: 11 }}>…{c.checkpointId.slice(-6)}</span>
+        {now && <span style={{ color: "var(--pause)", fontSize: 11 }}>now</span>}
+      </button>
+    );
+  };
+
   return (
     <div style={{ padding: "10px 12px", borderBottom: "1px solid var(--line)" }}>
       <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 6 }}>
         <strong style={{ fontSize: 13 }}>⏱ Time travel</strong>
         <span style={{ color: "#6e7681", fontSize: 11 }}>click a checkpoint to rewind &amp; re-run</span>
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
-        {checkpoints.map((c, i) => {
-          const now = i === 0;  // newest = the current head
-          return (
-            <button key={c.checkpointId}
-              disabled={now}
-              onClick={() => postCmd({ type: "fork", threadId: "run", checkpointId: c.checkpointId })}
-              title={now ? "current position" : `rewind to before ${c.node ?? "end"}`}
-              style={{
-                display: "flex", alignItems: "center", gap: 8, textAlign: "left",
-                border: "none", borderRadius: 4, padding: "4px 8px", fontSize: 12,
-                background: now ? "var(--surface-2)" : "transparent",
-                color: now ? "var(--text)" : "var(--muted)",
-                cursor: now ? "default" : "pointer",
-              }}>
-              <span style={{ color: now ? "var(--pause)" : "#6e7681" }}>{now ? "▶" : "↩"}</span>
-              <span style={{ flex: 1 }}>{c.node ? `before ${c.node}` : "end"}</span>
-              {/* show the suffix: time-ordered uuids share a prefix, so the head differs */}
-              <span style={{ color: "#6e7681", fontFamily: "monospace", fontSize: 11 }}>…{c.checkpointId.slice(-6)}</span>
-              {now && <span style={{ color: "var(--pause)", fontSize: 11 }}>now</span>}
-            </button>
-          );
-        })}
+      <div style={{ display: "flex", flexDirection: "column", gap: 2, maxHeight: 260, overflowY: "auto" }}>
+        {shown.map(row)}
+        {older.length > 0 && (
+          <button onClick={() => setShowOlder((v) => !v)}
+            style={{ border: "none", background: "transparent", color: "#6cb6ff", fontSize: 11, textAlign: "left", padding: "4px 8px", cursor: "pointer" }}>
+            {showOlder ? "▲ hide older runs" : `▼ ${older.length} older checkpoint${older.length === 1 ? "" : "s"} (previous runs)`}
+          </button>
+        )}
       </div>
     </div>
   );

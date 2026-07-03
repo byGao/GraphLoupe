@@ -1,9 +1,29 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, tokenSummary, topoOrder, type CanvasState } from "./model";
+import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, splitCurrentRun, tokenSummary, topoOrder, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
+
+describe("splitCurrentRun (P1-2 time-travel readability)", () => {
+  const cp = (node: string | null, id: string) => ({ node, checkpointId: id });
+
+  it("keeps the current run (head down to its __start__) and collapses older runs", () => {
+    // two runs stacked newest-first: [review, plan, __start__ | end, gate, __start__]
+    const list = [cp("review", "a"), cp("plan", "b"), cp("__start__", "c"),
+                  cp(null, "d"), cp("gate", "e"), cp("__start__", "f")];
+    const { current, older } = splitCurrentRun(list);
+    expect(current.map((c) => c.node)).toEqual(["review", "plan", "__start__"]);
+    expect(older.map((c) => c.node)).toEqual([null, "gate", "__start__"]);
+  });
+
+  it("returns everything as current when there is no __start__ boundary", () => {
+    const list = [cp("review", "a"), cp("plan", "b")];
+    const { current, older } = splitCurrentRun(list);
+    expect(current).toHaveLength(2);
+    expect(older).toHaveLength(0);
+  });
+});
 
 describe("state timeline (P1-2)", () => {
   const steps = [

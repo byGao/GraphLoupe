@@ -230,6 +230,15 @@ export interface BranchRow {
   key: string | null;
   notTaken: { key: string; target: string }[];
 }
+/** Split the time-travel checkpoint list (newest first) into the current run and the older
+ *  runs stacked beneath it (P1-2 UX): re-running the same thread appends prior runs' whole
+ *  lineage, so "current" = head down to and including its first `__start__`. Pure. */
+export function splitCurrentRun(checkpoints: CheckpointRef[]): { current: CheckpointRef[]; older: CheckpointRef[] } {
+  const startIdx = checkpoints.findIndex((c) => c.node === "__start__");
+  const boundary = startIdx === -1 ? checkpoints.length : startIdx + 1;
+  return { current: checkpoints.slice(0, boundary), older: checkpoints.slice(boundary) };
+}
+
 const DIFF_MAXLEN = 40;
 /** Summarize a state value for a diff line (P1-2): long strings truncated, list/dict shown
  *  as a count so a big payload doesn't dump raw JSON into the line. Pure. */
