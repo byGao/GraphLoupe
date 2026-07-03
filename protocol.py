@@ -266,6 +266,24 @@ class BranchDecisions(Envelope):
     decisions: list[BranchDecision]
 
 
+class StateStep(BaseModel):
+    # One super-step in the run's state timeline (P1-2), reconstructed from the checkpoint
+    # lineage: at `checkpointId` the node `node` ran and produced `diff` (per-channel
+    # before/after). `node` is None when it can't be attributed (e.g. the initial input).
+    seq: int
+    checkpointId: CheckpointId
+    node: NodeName | None
+    diff: list[StateDiffEntry]
+
+
+class StateTimeline(Envelope):
+    # Per-step state evolution across the run, reconstructed from the checkpoint lineage;
+    # emitted alongside CheckpointHistory (at each pause / run end). Added P1-2 state-diff.
+    type: Literal["state_timeline"] = "state_timeline"
+    threadId: ThreadId
+    steps: list[StateStep]
+
+
 class RunFinished(Envelope):
     type: Literal["run_finished"] = "run_finished"
     threadId: ThreadId
@@ -287,7 +305,7 @@ ServerEvent = Annotated[
     Union[
         GraphTopology, RunStarted, NodeStart, NodeEnd, LlmStart, LlmToken, LlmEnd,
         ToolStart, ToolEnd, ManualInferenceRequired, BreakpointHit,
-        StateSnapshotEvent, CheckpointHistory, BranchDecisions, RunFinished, ErrorEvent,
+        StateSnapshotEvent, CheckpointHistory, BranchDecisions, StateTimeline, RunFinished, ErrorEvent,
     ],
     Field(discriminator="type"),
 ]

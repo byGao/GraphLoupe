@@ -146,6 +146,18 @@ export const BranchDecisions = z.object({
   ...env, type: z.literal("branch_decisions"),
   threadId: z.string(), decisions: z.array(BranchDecision),
 });
+// One super-step in the run's state timeline (P1-2): at `checkpointId` node `node` ran and
+// produced `diff` (per-channel before/after). `node` is null when unattributable.
+export const StateStep = z.object({
+  seq: z.number().int(),
+  checkpointId: z.string(),
+  node: z.string().nullable(),
+  diff: z.array(StateDiffEntry),
+});
+export const StateTimeline = z.object({
+  ...env, type: z.literal("state_timeline"),
+  threadId: z.string(), steps: z.array(StateStep),
+});
 export const RunFinished = z.object({
   ...env, type: z.literal("run_finished"),
   threadId: z.string(), runId: z.string(),
@@ -159,7 +171,7 @@ export const ErrorEvent = z.object({
 export const ServerEvent = z.discriminatedUnion("type", [
   GraphTopology, RunStarted, NodeStart, NodeEnd, LlmStart, LlmToken, LlmEnd,
   ToolStart, ToolEnd, ManualInferenceRequired, BreakpointHit,
-  StateSnapshotEvent, CheckpointHistory, BranchDecisions, RunFinished, ErrorEvent,
+  StateSnapshotEvent, CheckpointHistory, BranchDecisions, StateTimeline, RunFinished, ErrorEvent,
 ]);
 export type ServerEvent = z.infer<typeof ServerEvent>;
 

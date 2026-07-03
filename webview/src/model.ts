@@ -25,6 +25,9 @@ interface PendingLlm { node: string; prompt: number; promptText?: string }
 
 export interface DiffEntry { channel: string; op: string; before?: unknown; after?: unknown }
 export interface Snapshot { values: Record<string, unknown>; diff: DiffEntry[] }
+/** One super-step in the run's state timeline (P1-2): the node that ran + its per-channel
+ *  diff, reconstructed by the worker from the checkpoint lineage. */
+export interface StateStep { seq: number; checkpointId: string; node: string | null; diff: DiffEntry[] }
 export interface Paused { node: string; checkpointId: string }
 
 /** One point on the time-travel timeline; `node` is what runs next from here. */
@@ -52,6 +55,7 @@ export interface CanvasState {
   snapshot: Snapshot | null;      // state at the current pause
   checkpoints: CheckpointRef[];   // time-travel timeline (newest first); click one to rewind
   branchDecisions: BranchDecision[];  // router decisions taken this run (oldest first) (P1-3)
+  timeline: StateStep[];  // per-step state evolution this run (oldest first) (P1-2)
   inputSchema: Record<string, unknown> | null;  // graph input JSON Schema for the run form
   projectRoot: string | null;     // project root the graph loaded from, for form defaults
   tokens: Record<string, NodeTokens>;  // per-node token tally for the current run (PHASE 4)
@@ -69,7 +73,7 @@ export type NodeKind = "llm" | "manual" | "script";
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
-  paused: null, snapshot: null, checkpoints: [], branchDecisions: [], inputSchema: null, projectRoot: null,
+  paused: null, snapshot: null, checkpoints: [], branchDecisions: [], timeline: [], inputSchema: null, projectRoot: null,
   tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {}, nodeSources: {},
   hasCheckpointer: null, langgraphVersion: null, workerPython: null,
 };
@@ -226,6 +230,27 @@ export interface BranchRow {
   key: string | null;
   notTaken: { key: string; target: string }[];
 }
+const DIFF_MAXLEN = 40;
+/** Summarize a state value for a diff line (P1-2): long strings truncated, list/dict shown
+ *  as a count so a big payload doesn't dump raw JSON into the line. Pure. */
+function formatValue(v: unknown): string {
+  if (v === null || v === undefined) return "∅";
+  if (typeof v === "string") return v.length > DIFF_MAXLEN ? v.slice(0, DIFF_MAXLEN) + "…" : v;
+  if (typeof v === "number" || typeof v === "boolean") return String(v);
+  if (Array.isArray(v)) return `list[${v.length}]`;
+  if (typeof v === "object") return `{${Object.keys(v as object).length} keys}`;
+  return String(v);
+}
+/** One diff entry as a human-readable line (P1-2): "~ ch: a → b" / "+ ch: v" / "− ch: v".
+ *  Shared by the State Diff and Timeline views. Pure. */
+export function formatDiffEntry(d: DiffEntry): string {
+  const sign = d.op === "add" ? "+" : d.op === "remove" ? "−" : "~";
+  const val = d.op === "add" ? formatValue(d.after)
+    : d.op === "remove" ? formatValue(d.before)
+    : `${formatValue(d.before)} → ${formatValue(d.after)}`;
+  return `${sign} ${d.channel}: ${val}`;
+}
+
 export function branchRows(state: CanvasState): BranchRow[] {
   return state.branchDecisions.map((d) => ({
     source: d.source, target: d.target, key: d.key,
@@ -314,15 +339,17 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
         hasCheckpointer: ev.hasCheckpointer ?? null, langgraphVersion: ev.langgraphVersion ?? null,
         workerPython: ev.workerPython ?? null,
         running: false, active: null, paused: null, pending: null, snapshot: null,
-        tokens: {}, llmPending: {}, checkpoints: [], branchDecisions: [] };
+        tokens: {}, llmPending: {}, checkpoints: [], branchDecisions: [], timeline: [] };
     }
     case "run_started":
       return { ...state, running: true, active: null, paused: null, snapshot: null,
-        checkpoints: [], branchDecisions: [], tokens: {}, llmPending: {} };
+        checkpoints: [], branchDecisions: [], timeline: [], tokens: {}, llmPending: {} };
     case "checkpoint_history":
       return { ...state, checkpoints: ev.checkpoints };
     case "branch_decisions":
       return { ...state, branchDecisions: ev.decisions };
+    case "state_timeline":
+      return { ...state, timeline: ev.steps };
     case "llm_start":
       // buffer the call; its prompt is finalized at llm_end (exact if api_usage arrives).
       // observing a chat-model call marks this node as inference (persists across runs).

@@ -1,9 +1,38 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { autoTab, branchRows, buildInput, defaultForm, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, tokenSummary, topoOrder, type CanvasState } from "./model";
+import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, tokenSummary, topoOrder, type CanvasState } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
+
+describe("state timeline (P1-2)", () => {
+  const steps = [
+    { seq: 0, checkpointId: "a", node: "ingest", diff: [{ channel: "query", op: "add", before: null, after: "hi" }] },
+    { seq: 1, checkpointId: "b", node: "plan", diff: [{ channel: "steps", op: "update", before: 2, after: 3 }] },
+  ];
+
+  it("reduce stores the timeline and clears it on run_started / graph", () => {
+    const s = reduce(initialState, ev({ v: "0.1.0", corr: null, type: "state_timeline", threadId: "t", steps }));
+    expect(s.timeline).toHaveLength(2);
+    expect(reduce(s, ev({ v: "0.1.0", corr: null, type: "run_started", threadId: "t", runId: "t", checkpointId: null })).timeline).toEqual([]);
+    expect(reduce(s, ev({ v: "0.1.0", corr: null, type: "graph", nodes: ["ingest"], edges: [] })).timeline).toEqual([]);
+  });
+
+  it("formatDiffEntry renders update / add / remove readably", () => {
+    expect(formatDiffEntry({ channel: "steps", op: "update", before: 2, after: 3 })).toBe("~ steps: 2 → 3");
+    expect(formatDiffEntry({ channel: "notes", op: "add", before: null, after: "outline" })).toBe("+ notes: outline");
+    expect(formatDiffEntry({ channel: "tmp", op: "remove", before: "gone", after: null })).toBe("− tmp: gone");
+  });
+
+  it("formatDiffEntry truncates long strings and summarizes list/dict", () => {
+    const long = "x".repeat(80);
+    const line = formatDiffEntry({ channel: "c", op: "add", before: null, after: long });
+    expect(line.endsWith("…")).toBe(true);
+    expect(line.length).toBeLessThan(60);
+    expect(formatDiffEntry({ channel: "msgs", op: "update", before: [1], after: [1, 2, 3] })).toBe("~ msgs: list[1] → list[3]");
+    expect(formatDiffEntry({ channel: "obj", op: "add", before: null, after: { a: 1, b: 2 } })).toBe("+ obj: {2 keys}");
+  });
+});
 
 describe("branch decisions (P1-3)", () => {
   const decisions = [{

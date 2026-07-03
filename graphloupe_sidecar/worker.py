@@ -461,6 +461,30 @@ def _branch_decisions(graph: Any, thread_id: str) -> str:
     return P.BranchDecisions(threadId=thread_id, decisions=decisions).model_dump_json()
 
 
+def _state_timeline(graph: Any, thread_id: str) -> str:
+    """Reconstruct the run's per-step state evolution from the committed checkpoint lineage
+    (P1-2): for each parent->child step the node `parent.next[0]` ran to produce the child,
+    so its effect is `_diff(parent.values, child.values)`. Same lineage walk and _diff the
+    snapshot/timeline already use — post-commit reliable (not the racy on_chain_end)."""
+    raw: list[tuple[str, str | None, list[P.StateDiffEntry]]] = []  # (checkpointId, node, diff)
+    s = graph.get_state({"configurable": {"thread_id": thread_id}})
+    count = 0
+    while s is not None and s.parent_config and count < _HISTORY_LIMIT:
+        count += 1
+        parent = graph.get_state(s.parent_config)
+        ran = parent.next[0] if parent.next else None      # node that ran to produce s
+        # skip the START pseudo-step (input write, attributed to __start__): the timeline is
+        # "which real node changed what", the raw input lives in the State/Raw view.
+        if ran not in ("__start__", "__end__"):
+            cid = s.config["configurable"].get("checkpoint_id") if s.config else None
+            raw.append((cid or "-", ran, _diff(parent.values or {}, s.values or {})))
+        s = parent
+    raw.reverse()  # oldest -> newest
+    steps = [P.StateStep(seq=i, checkpointId=cid, node=node, diff=diff)
+             for i, (cid, node, diff) in enumerate(raw)]
+    return P.StateTimeline(threadId=thread_id, steps=steps).model_dump_json()
+
+
 def _fork_target(graph: Any, thread_id: str, cmd: dict[str, Any]) -> dict[str, Any] | None:
     """Resolve a fork command into a resume config; emit checkpoint_not_found on a miss."""
     ckpt_id = cmd.get("checkpointId")
@@ -577,6 +601,7 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
             _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="completed").model_dump_json())
             if has_checkpointer:
                 _emit(_branch_decisions(graph, thread_id))  # router decisions for the run (P1-3)
+                _emit(_state_timeline(graph, thread_id))    # per-step state evolution (P1-2)
             # a fork/time-travel run reports its final state so the UI can show the result
             if was_fork and state is not None:
                 fckpt = state.config["configurable"]["checkpoint_id"] if state.config else "-"
@@ -588,6 +613,7 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
             _emit(_manual_required(thread_id, node, intr_id, val))
             _emit(_checkpoint_history(graph, thread_id))  # timeline for ◀ time-travel
             _emit(_branch_decisions(graph, thread_id))  # router decisions so far (P1-3)
+            _emit(_state_timeline(graph, thread_id))    # per-step state evolution so far (P1-2)
             outcome = await _await_resume(cmd_q, val, node, breakpoints, graph, thread_id)
             if outcome is _SHUTDOWN:
                 return
@@ -607,6 +633,8 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
                               checkpointId=ckpt).model_dump_json())
         _emit(_snapshot(thread_id, ckpt, state.values, prev))
         _emit(_checkpoint_history(graph, thread_id))  # timeline for ◀ time-travel
+        _emit(_branch_decisions(graph, thread_id))  # router decisions so far (P1-3 parity)
+        _emit(_state_timeline(graph, thread_id))    # per-step state evolution so far (P1-2)
         prev = dict(state.values)
         action = await _await_debug(cmd_q, graph, nodes, thread_id, cfg, breakpoints, prev)
         if action == "shutdown":

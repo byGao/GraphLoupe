@@ -6,9 +6,9 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  autoTab, branchRows, buildInput, defaultForm, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
+  autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
   overviewRows, reduce, sourceLabel, tokenSummary,
-  type BranchRow, type CanvasState, type CheckpointRef, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type Snapshot,
+  type BranchRow, type CanvasState, type CheckpointRef, type DiffEntry, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type Snapshot, type StateStep,
 } from "./model";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
@@ -97,57 +97,114 @@ function CheckpointTimeline({ checkpoints }: { checkpoints: CheckpointRef[] }) {
   );
 }
 
-function DebugPanel({ paused, snapshot }: { paused: Paused; snapshot: Snapshot | null }) {
+const DIFF_COLOR = (op: string) => (op === "add" ? "#3fb950" : op === "remove" ? "#f85149" : "#d29922");
+
+/** A list of diff lines rendered human-readably ("~ ch: a → b"), colored by op (P1-2). */
+function DiffLines({ diff, empty }: { diff: DiffEntry[]; empty: string }) {
+  if (diff.length === 0) return <span className="gl-help">{empty}</span>;
+  return (
+    <>
+      {diff.map((d, i) => (
+        <div key={i} style={{ color: DIFF_COLOR(d.op), whiteSpace: "pre-wrap", wordBreak: "break-word" }}>
+          {formatDiffEntry(d)}
+        </div>
+      ))}
+    </>
+  );
+}
+
+type StateView = "raw" | "diff" | "timeline";
+
+/** State inspector (P1-2): three views over the run's state — Raw (current values JSON),
+ *  Diff (last super-step's before→after per channel), Timeline (per-step evolution across
+ *  the whole run, reconstructed from the checkpoint lineage). Pause adds Step / Continue /
+ *  Fork controls; the views themselves also read after a completed run (Timeline). */
+function StatePanel({ state }: { state: CanvasState }) {
+  const { paused, snapshot, timeline } = state;
+  const [view, setView] = useState<StateView>(paused ? "diff" : "timeline");
   const [override, setOverride] = useState("");
+  const seg: CSSProperties = { fontSize: 11, padding: "2px 10px", borderRadius: 4, cursor: "pointer", border: "1px solid #3b4654", background: "#1c2430", color: "#8b949e" };
+  const segOn: CSSProperties = { ...seg, background: "#16351f", borderColor: "#3fb950", color: "#3fb950" };
+
   return (
     <div style={{ padding: "10px 12px" }}>
-      <div style={{ display: "flex", alignItems: "center", gap: 10, marginBottom: 6, flexWrap: "wrap" }}>
-        <strong style={{ color: "var(--pause)" }}>‖ paused @ {paused.node}</strong>
-        <span style={{ color: "#6e7681", fontSize: 12 }}>checkpoint {paused.checkpointId.slice(0, 8)}</span>
-        <button style={{ marginLeft: "auto", fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
-        <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
+      <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8, flexWrap: "wrap" }}>
+        {(["raw", "diff", "timeline"] as StateView[]).map((v) => (
+          <button key={v} style={view === v ? segOn : seg} onClick={() => setView(v)}>
+            {v === "raw" ? "Raw" : v === "diff" ? "Diff" : "Timeline"}
+          </button>
+        ))}
+        <span style={{ marginLeft: "auto", color: "#6e7681", fontSize: 12 }}>
+          {paused ? <><strong style={{ color: "var(--pause)" }}>‖ paused @ {paused.node}</strong> · {paused.checkpointId.slice(0, 8)}</> : (state.running ? "running…" : "")}
+        </span>
+        {paused && (
+          <>
+            <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
+            <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
+          </>
+        )}
       </div>
-      <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
+
+      {view === "raw" && (
         <div>
           <div style={{ display: "flex", alignItems: "center", marginBottom: 2 }}>
-            <div style={{ color: "#8b949e", fontSize: 11 }}>State</div>
+            <div style={{ color: "#8b949e", fontSize: 11 }}>Current state values</div>
             <button style={{ marginLeft: "auto", fontSize: 11 }}
               disabled={!snapshot}
-              onClick={() => snapshot && navigator.clipboard?.writeText(JSON.stringify(snapshot.values, null, 2))}>
-              Copy
-            </button>
+              onClick={() => snapshot && navigator.clipboard?.writeText(JSON.stringify(snapshot.values, null, 2))}>Copy</button>
           </div>
-          <pre style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, whiteSpace: "pre-wrap", margin: 0, maxHeight: 200, overflow: "auto", userSelect: "text" }}>
-            {snapshot ? JSON.stringify(snapshot.values, null, 2) : "…"}
+          <pre style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, whiteSpace: "pre-wrap", margin: 0, maxHeight: 260, overflow: "auto", userSelect: "text" }}>
+            {snapshot ? JSON.stringify(snapshot.values, null, 2) : "Pause at a breakpoint to capture the current state values."}
           </pre>
         </div>
+      )}
+
+      {view === "diff" && (
         <div>
-          <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>Diff (last super-step)</div>
-          <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, maxHeight: 80, overflow: "auto" }}>
-            {(snapshot?.diff ?? []).length === 0 && <span className="gl-help">no changes</span>}
-            {(snapshot?.diff ?? []).map((d, i) => (
-              <div key={i} style={{ color: d.op === "add" ? "#3fb950" : d.op === "remove" ? "#f85149" : "#d29922" }}>
-                {d.op === "add" ? "+" : d.op === "remove" ? "−" : "~"} {d.channel}
-              </div>
-            ))}
-          </div>
-          <div style={{ marginTop: 8 }}>
-            <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>
-              Fork from here — optional channel updates (JSON):
-            </div>
-            <textarea
-              value={override} onChange={(e) => setOverride(e.target.value)} spellCheck={false}
-              placeholder={'e.g. {"steps": 0}  — applied on top of this checkpoint\'s state'}
-              style={{ width: "100%", minHeight: 48, background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: 6, fontFamily: "monospace", fontSize: 11 }}
-            />
-            <button style={{ marginTop: 4, fontSize: 12 }} onClick={() => {
-              let stateOverride: unknown = null;
-              if (override.trim()) { try { stateOverride = JSON.parse(override); } catch { stateOverride = null; } }
-              postCmd({ type: "fork", threadId: "run", checkpointId: paused.checkpointId, stateOverride });
-            }}>Fork ↩</button>
+          <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>Diff · last super-step{paused ? ` (${paused.node})` : ""}</div>
+          <div style={{ background: "#0d1117", border: "1px solid #21262d", borderRadius: 6, padding: 8, fontSize: 11, maxHeight: 200, overflow: "auto" }}>
+            <DiffLines diff={snapshot?.diff ?? []} empty={snapshot ? "no changes" : "Pause at a breakpoint to see what the last step changed."} />
           </div>
         </div>
-      </div>
+      )}
+
+      {view === "timeline" && (
+        <div>
+          <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 4 }}>Timeline · {timeline.length} step{timeline.length === 1 ? "" : "s"}</div>
+          {timeline.length === 0
+            ? <div className="gl-help">{state.hasCheckpointer === false
+                ? "No checkpointer — state timeline can't be reconstructed. Add compile(checkpointer=…)."
+                : "Run a graph to see how state evolved step by step."}</div>
+            : <div style={{ maxHeight: 320, overflow: "auto" }}>
+                {timeline.map((s: StateStep) => (
+                  <div key={s.seq} style={{ marginBottom: 8, borderLeft: "2px solid var(--node)", paddingLeft: 10 }}>
+                    <div style={{ fontSize: 12, color: "#eaf0f7", fontFamily: "var(--mono)" }}>
+                      <span style={{ color: "#6e7681" }}>{s.seq + 1}</span> · <span style={{ color: "#b69bff" }}>{s.node ?? "—"}</span>
+                    </div>
+                    <div style={{ fontSize: 11, marginTop: 2 }}>
+                      <DiffLines diff={s.diff} empty="no state change" />
+                    </div>
+                  </div>
+                ))}
+              </div>}
+        </div>
+      )}
+
+      {paused && (
+        <div style={{ marginTop: 12, borderTop: "1px solid #21262d", paddingTop: 8 }}>
+          <div style={{ color: "#8b949e", fontSize: 11, marginBottom: 2 }}>Fork from here — optional channel updates (JSON):</div>
+          <textarea
+            value={override} onChange={(e) => setOverride(e.target.value)} spellCheck={false}
+            placeholder={'e.g. {"steps": 0}  — applied on top of this checkpoint\'s state'}
+            style={{ width: "100%", minHeight: 48, background: "#0d1117", color: "#c9d1d9", border: "1px solid #30363d", borderRadius: 6, padding: 6, fontFamily: "monospace", fontSize: 11 }}
+          />
+          <button style={{ marginTop: 4, fontSize: 12 }} onClick={() => {
+            let stateOverride: unknown = null;
+            if (override.trim()) { try { stateOverride = JSON.parse(override); } catch { stateOverride = null; } }
+            postCmd({ type: "fork", threadId: "run", checkpointId: paused.checkpointId, stateOverride });
+          }}>Fork ↩</button>
+        </div>
+      )}
     </div>
   );
 }
@@ -736,11 +793,7 @@ export default function App() {
             {tab === "state" && (
               <>
                 {state.checkpoints.length > 0 && <CheckpointTimeline checkpoints={state.checkpoints} />}
-                {state.paused
-                  ? <DebugPanel paused={state.paused} snapshot={state.snapshot} />
-                  : state.checkpoints.length === 0 && (
-                    <div className="gl-help" style={{ padding: 12 }}>Not paused. Click a node on the canvas to set a breakpoint, then Run — state and diff show here.</div>
-                  )}
+                <StatePanel state={state} />
               </>
             )}
             {tab === "tokens" && <TokenPanel state={state} />}

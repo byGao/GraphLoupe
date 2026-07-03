@@ -1,0 +1,25 @@
+{
+  "v": "0.1.0",
+  "corr": null,
+  "type": "state_timeline",
+  "threadId": "t1",
+  "steps": [
+    {
+      "seq": 0,
+      "checkpointId": "ckpt-a",
+      "node": "ingest",
+      "diff": [
+        { "channel": "query", "before": null, "after": "hello", "op": "add" },
+        { "channel": "messages", "before": null, "after": ["m1"], "op": "add" }
+      ]
+    },
+    {
+      "seq": 1,
+      "checkpointId": "ckpt-b",
+      "node": "plan",
+      "diff": [
+        { "channel": "steps", "before": 2, "after": 3, "op": "update" }
+      ]
+    }
+  ]
+}
