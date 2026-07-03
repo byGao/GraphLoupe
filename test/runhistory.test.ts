@@ -47,7 +47,8 @@ describe("compareRuns (P1-5)", () => {
     expect(c.pathIdentical).toBe(false);
     expect(c.tokensDelta).toBe(6);            // 22 − 16
     expect(c.durationDelta).toBe(-16400);     // 5800 − 22200
-    expect(c.branchDiffs.map((d) => d.index)).toEqual([0, 1]);  // first router key differs; B has an extra decision
+    // sequence-aligned: the shared `approve` matches; B's extra `redo` is the only diff (P1-5b)
+    expect(c.branchDiffs).toEqual([{ kind: "b-only", a: null, b: { source: "gate", key: "redo", target: "plan" } }]);
   });
 
   it("reports an identical path with null divergence but still deltas", () => {
@@ -74,5 +75,29 @@ describe("compareRuns (P1-5)", () => {
     expect(c.statusChanged).toBe(true);
     expect(c.inputChanged).toBe(true);
     expect(c.durationDelta).toBeNull();
+  });
+
+  // P1-5b: branch decisions aligned by sequence (LCS), not by index
+  const br = (key: string, target: string) => ({ source: "gate", key, target });
+  const diffs = (as: ReturnType<typeof br>[], bs: ReturnType<typeof br>[]) =>
+    compareRuns(mk({ branches: as }), mk({ branches: bs })).branchDiffs;
+
+  it("aligns a shared decision and reports only the extra one as b-only", () => {
+    expect(diffs([br("approve", "synth")], [br("redo", "plan"), br("approve", "synth")]))
+      .toEqual([{ kind: "b-only", a: null, b: br("redo", "plan") }]);
+  });
+
+  it("reports a-only when A has the extra decision", () => {
+    expect(diffs([br("redo", "plan"), br("approve", "synth")], [br("approve", "synth")]))
+      .toEqual([{ kind: "a-only", a: br("redo", "plan"), b: null }]);
+  });
+
+  it("coalesces a differing decision at the same point into changed", () => {
+    expect(diffs([br("approve", "synth")], [br("abort", "__end__")]))
+      .toEqual([{ kind: "changed", a: br("approve", "synth"), b: br("abort", "__end__") }]);
+  });
+
+  it("returns no branch diffs when the decision sequences are identical", () => {
+    expect(diffs([br("approve", "synth")], [br("approve", "synth")])).toEqual([]);
   });
 });

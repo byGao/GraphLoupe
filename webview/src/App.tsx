@@ -380,18 +380,20 @@ function ComparePanel({ a, b }: { a: RunRecord; b: RunRecord }) {
         <span style={{ color: "#8b949e" }}>Δ {durLabel}</span>
       </div>
       {row("input", c.inputChanged ? "changed" : "identical", c.inputChanged ? "changed" : "identical", false)}
-      {c.branchDiffs.length > 0 && (
-        <div style={{ marginTop: 6 }}>
-          <div style={{ color: "#6e7681", fontSize: 11, marginBottom: 2 }}>branch decisions differ:</div>
-          {c.branchDiffs.map((d, i) => (
+      <div style={{ marginTop: 6 }}>
+        <div style={{ color: "#6e7681", fontSize: 11, marginBottom: 2 }}>branch decisions:</div>
+        {c.branchDiffs.length === 0
+          ? <div style={{ color: "#3fb950", fontSize: 11 }}>✓ same decisions</div>
+          : c.branchDiffs.map((d, i) => (
             <div key={i} style={{ fontSize: 11, fontFamily: "var(--mono)", marginTop: 2 }}>
-              <span style={{ color: "#3fb950", fontWeight: 700 }}>A</span> {fmtBranch(d.a)}
-              <span style={{ color: "#6e7681" }}>{"   "}</span>
-              <span style={{ color: "#e3b341", fontWeight: 700 }}>B</span> {fmtBranch(d.b)}
+              {d.kind === "b-only" && <span><span style={{ color: "#e3b341", fontWeight: 700 }}>+ B only</span> {fmtBranch(d.b)}</span>}
+              {d.kind === "a-only" && <span><span style={{ color: "#8b949e", fontWeight: 700 }}>− A only</span> {fmtBranch(d.a)}</span>}
+              {d.kind === "changed" && (
+                <span><span style={{ color: "#f0726b", fontWeight: 700 }}>≠</span> A {fmtBranch(d.a)}  <span style={{ color: "#6e7681" }}>·</span>  B {fmtBranch(d.b)}</span>
+              )}
             </div>
           ))}
-        </div>
-      )}
+      </div>
     </div>
   );
 }

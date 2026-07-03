@@ -63,8 +63,14 @@ export function parseRunsFile(content: string, cap: number): RunRecord[] {
 }
 
 // ---- run comparison (P1-5) -------------------------------------------------
-/** One position where two runs' router decisions differ (aligned by index). */
-export interface BranchDiff { index: number; a: RunBranch | null; b: RunBranch | null }
+/** One aligned branch-decision difference (P1-5b). The two runs' decision sequences are
+ *  aligned by LCS (not by index), so a loop that adds an extra decision shows as one
+ *  `b-only` entry rather than mis-pairing every later decision:
+ *    a-only  = a made this decision, b didn't        (a set, b null)
+ *    b-only  = b made this decision, a didn't        (a null, b set)
+ *    changed = same aligned point, different decision (both set) */
+export type BranchDiffKind = "a-only" | "b-only" | "changed";
+export interface BranchDiff { kind: BranchDiffKind; a: RunBranch | null; b: RunBranch | null }
 
 export interface RunComparison {
   firstDivergenceIndex: number | null;  // first nodePath index where a and b differ (or where one ends); null if identical
@@ -73,12 +79,45 @@ export interface RunComparison {
   durationDelta: number | null;          // b duration − a duration (ms); null if either run is unfinished
   statusChanged: boolean;
   inputChanged: boolean;
-  branchDiffs: BranchDiff[];             // positions where the branch decision differs
+  branchDiffs: BranchDiff[];             // branch decisions that differ, aligned by sequence (LCS)
 }
 
-function sameBranch(a: RunBranch | null, b: RunBranch | null): boolean {
-  if (a === null || b === null) return a === b;
+function sameBranch(a: RunBranch, b: RunBranch): boolean {
   return a.source === b.source && a.key === b.key && a.target === b.target;
+}
+
+/** Sequence-diff two branch-decision lists (P1-5b): LCS-align by `sameBranch`, then report
+ *  the non-matching entries — adjacent delete+insert coalesced into a `changed`. Pure. */
+function branchesDiff(as: RunBranch[], bs: RunBranch[]): BranchDiff[] {
+  const n = as.length, m = bs.length;
+  // dp[i][j] = LCS length of as[i..] and bs[j..]
+  const dp: number[][] = Array.from({ length: n + 1 }, () => new Array<number>(m + 1).fill(0));
+  for (let i = n - 1; i >= 0; i--) {
+    for (let j = m - 1; j >= 0; j--) {
+      dp[i][j] = sameBranch(as[i], bs[j]) ? dp[i + 1][j + 1] + 1 : Math.max(dp[i + 1][j], dp[i][j + 1]);
+    }
+  }
+  type Op = { t: "same" | "del" | "ins"; a?: RunBranch; b?: RunBranch };
+  const ops: Op[] = [];
+  let i = 0, j = 0;
+  while (i < n && j < m) {
+    if (sameBranch(as[i], bs[j])) { ops.push({ t: "same" }); i++; j++; }
+    else if (dp[i + 1][j] >= dp[i][j + 1]) { ops.push({ t: "del", a: as[i++] }); }
+    else { ops.push({ t: "ins", b: bs[j++] }); }
+  }
+  while (i < n) ops.push({ t: "del", a: as[i++] });
+  while (j < m) ops.push({ t: "ins", b: bs[j++] });
+
+  const out: BranchDiff[] = [];
+  for (let k = 0; k < ops.length; k++) {
+    const o = ops[k], next = ops[k + 1];
+    if (o.t === "same") continue;
+    if (o.t === "del" && next?.t === "ins") { out.push({ kind: "changed", a: o.a!, b: next.b! }); k++; }
+    else if (o.t === "ins" && next?.t === "del") { out.push({ kind: "changed", a: next.a!, b: o.b! }); k++; }
+    else if (o.t === "del") out.push({ kind: "a-only", a: o.a!, b: null });
+    else out.push({ kind: "b-only", a: null, b: o.b! });
+  }
+  return out;
 }
 
 /** Compare two runs (P1-5): where their node paths first diverge, which branch decisions
@@ -91,14 +130,6 @@ export function compareRuns(a: RunRecord, b: RunRecord): RunComparison {
   }
   if (div === null && a.nodePath.length !== b.nodePath.length) div = n;  // one path is a prefix of the other
 
-  const branchDiffs: BranchDiff[] = [];
-  const bn = Math.max(a.branches.length, b.branches.length);
-  for (let i = 0; i < bn; i++) {
-    const ba = a.branches[i] ?? null;
-    const bb = b.branches[i] ?? null;
-    if (!sameBranch(ba, bb)) branchDiffs.push({ index: i, a: ba, b: bb });
-  }
-
   const dur = (r: RunRecord) => (r.endedAt === null ? null : r.endedAt - r.startedAt);
   const da = dur(a), db = dur(b);
   const total = (r: RunRecord) => r.tokens.prompt + r.tokens.completion;
@@ -109,6 +140,6 @@ export function compareRuns(a: RunRecord, b: RunRecord): RunComparison {
     durationDelta: da === null || db === null ? null : db - da,
     statusChanged: a.status !== b.status,
     inputChanged: JSON.stringify(a.input) !== JSON.stringify(b.input),
-    branchDiffs,
+    branchDiffs: branchesDiff(a.branches, b.branches),
   };
 }
