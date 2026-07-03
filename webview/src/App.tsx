@@ -7,8 +7,8 @@ import {
 import "@xyflow/react/dist/style.css";
 import {
   autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
-  overviewRows, reduce, sourceLabel, splitCurrentRun, tokenSummary,
-  type BranchRow, type CanvasState, type CheckpointRef, type DiffEntry, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type Snapshot, type StateStep,
+  overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, tokenSummary,
+  type BranchRow, type CanvasState, type CheckpointRef, type DiffEntry, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type RunRecord, type Snapshot, type StateStep,
 } from "./model";
 import { elkLayout, type GraphLayout, type Pt } from "./layout";
 import type { ServerEvent } from "../../protocol";
@@ -328,6 +328,55 @@ function BranchPanel({ rows, hasCheckpointer }: { rows: BranchRow[]; hasCheckpoi
   );
 }
 
+const RUN_STATUS_COLOR: Record<string, string> = {
+  completed: "#3fb950", aborted: "#f85149", error: "#f85149", interrupted: "#d29922", running: "#6cb6ff",
+};
+
+/** Run History (P1-4): past runs persisted to .graphloupe/runs.jsonl, newest first. Click a
+ *  run to expand its node path / branches / tokens / error. Persists across reloads. */
+function HistoryPanel({ runs }: { runs: RunRecord[] }) {
+  const [open, setOpen] = useState<string | null>(null);
+  if (runs.length === 0) {
+    return <div className="gl-help" style={{ padding: 12 }}>No runs yet — run a graph. Finished runs are saved to <code>.graphloupe/runs.jsonl</code> and listed here.</div>;
+  }
+  return (
+    <div style={{ padding: 12 }}>
+      <div style={{ display: "flex", alignItems: "baseline", justifyContent: "space-between", marginBottom: 8 }}>
+        <div style={{ color: "var(--pause)", fontWeight: 600, fontSize: 13 }}>Run history</div>
+        <div style={{ color: "#6e7681", fontSize: 11 }}>{runs.length} run{runs.length === 1 ? "" : "s"} · .graphloupe/</div>
+      </div>
+      {runs.map((r) => {
+        const s = runSummary(r);
+        const expanded = open === r.runId;
+        const dur = s.durationMs === null ? "—" : `${(s.durationMs / 1000).toFixed(1)}s`;
+        return (
+          <div key={r.runId} style={{ marginBottom: 6, border: "1px solid #21262d", borderRadius: 6, overflow: "hidden" }}>
+            <button onClick={() => setOpen(expanded ? null : r.runId)}
+              style={{ width: "100%", textAlign: "left", background: expanded ? "#161b22" : "transparent", border: "none",
+                padding: "7px 10px", cursor: "pointer", display: "flex", alignItems: "center", gap: 8 }}>
+              <span style={{ color: RUN_STATUS_COLOR[r.status] ?? "#8b949e", fontSize: 10.5, fontWeight: 700, flex: "0 0 auto", width: 66 }}>{r.status}</span>
+              <span style={{ color: "#8b949e", fontSize: 11, flex: "0 0 auto" }}>{new Date(r.startedAt).toLocaleTimeString()}</span>
+              <span style={{ color: "#6e7681", fontSize: 11, flex: "0 0 auto" }}>{dur} · {s.tokens} tok</span>
+              <span style={{ color: "#8b949e", fontSize: 11, marginLeft: "auto", overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>{r.nodePath.length} nodes</span>
+            </button>
+            {expanded && (
+              <div style={{ padding: "6px 10px 10px", fontSize: 11, borderTop: "1px solid #21262d" }}>
+                <div style={{ marginBottom: 6 }}><span style={{ color: "#6e7681" }}>path: </span><span style={{ color: "#b69bff", fontFamily: "var(--mono)" }}>{s.path}</span></div>
+                {r.branches.length > 0 && (
+                  <div style={{ marginBottom: 6 }}><span style={{ color: "#6e7681" }}>branches: </span>
+                    <span style={{ color: "#6cb6ff", fontFamily: "var(--mono)" }}>{r.branches.map((b) => `${b.source} → ${b.target}${b.key ? ` (${b.key})` : ""}`).join(" · ")}</span></div>
+                )}
+                <div style={{ marginBottom: r.error ? 6 : 0, color: "#6e7681" }}>tokens: <span style={{ color: "#8b949e" }}>prompt {r.tokens.prompt} · completion {r.tokens.completion}</span></div>
+                {r.error && <div style={{ color: "#f85149", wordBreak: "break-word" }}>error: {r.error}</div>}
+              </div>
+            )}
+          </div>
+        );
+      })}
+    </div>
+  );
+}
+
 function TokenPanel({ state }: { state: CanvasState }) {
   const s = useMemo(() => tokenSummary(state), [state]);
   const [open, setOpen] = useState<string | null>(null);
@@ -552,10 +601,14 @@ export default function App() {
 
   useEffect(() => {
     const onMsg = (e: MessageEvent) => {
-      const msg = e.data as { type?: string; field?: string; path?: string };
+      const msg = e.data as { type?: string; field?: string; path?: string; records?: RunRecord[] };
       if (msg?.type === "folderPicked" && msg.field) {
         const field = msg.field;
         setForm((f) => ({ ...f, [field]: msg.path ?? "" }));
+        return;
+      }
+      if (msg?.type === "run_history") {  // P1-4: extension→webview, not a wire ServerEvent
+        setState((s) => ({ ...s, runs: msg.records ?? [] }));
         return;
       }
       const ev = e.data as ServerEvent;
@@ -666,6 +719,7 @@ export default function App() {
     { id: "tokens", label: "Tokens" },
     { id: "manual", label: "Manual", dot: !!state.pending },
     { id: "branch", label: "Branch", dot: branches.length > 0 },
+    { id: "history", label: "History", dot: state.runs.length > 0 },
     { id: "health", label: "Health", dot: health.some((c) => c.status === "warn" || c.status === "error") },
   ];
 
@@ -817,6 +871,7 @@ export default function App() {
                 : <div className="gl-help" style={{ padding: 12 }}>No pending manual inference. When a node calls interrupt(), its prompt appears here to copy → answer → resume.</div>
             )}
             {tab === "branch" && <BranchPanel rows={branches} hasCheckpointer={state.hasCheckpointer} />}
+            {tab === "history" && <HistoryPanel runs={state.runs} />}
             {tab === "health" && <HealthPanel checks={health} version={state.langgraphVersion} python={state.workerPython} />}
           </div>
         </div>

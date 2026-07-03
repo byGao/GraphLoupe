@@ -226,3 +226,6 @@ CLAUDE.md
 
 # packaged extension (build artifact)
 *.vsix
+
+# GraphLoupe per-project artifacts (entry adapter + run history) written into a projectRoot
+.graphloupe/

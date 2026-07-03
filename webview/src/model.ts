@@ -4,6 +4,8 @@
  * React Flow only renders this state. See webview/src/model.test.ts.
  */
 import type { ServerEvent } from "../../protocol";
+import type { RunRecord } from "../../runhistory";
+export type { RunRecord } from "../../runhistory";
 
 export interface ManualRequest {
   node: string;
@@ -56,6 +58,7 @@ export interface CanvasState {
   checkpoints: CheckpointRef[];   // time-travel timeline (newest first); click one to rewind
   branchDecisions: BranchDecision[];  // router decisions taken this run (oldest first) (P1-3)
   timeline: StateStep[];  // per-step state evolution this run (oldest first) (P1-2)
+  runs: RunRecord[];  // persisted run history, newest first (P1-4); fed by the run_history message
   inputSchema: Record<string, unknown> | null;  // graph input JSON Schema for the run form
   projectRoot: string | null;     // project root the graph loaded from, for form defaults
   tokens: Record<string, NodeTokens>;  // per-node token tally for the current run (PHASE 4)
@@ -73,7 +76,7 @@ export type NodeKind = "llm" | "manual" | "script";
 
 export const initialState: CanvasState = {
   nodes: [], edges: [], active: null, running: false, error: null, pending: null,
-  paused: null, snapshot: null, checkpoints: [], branchDecisions: [], timeline: [], inputSchema: null, projectRoot: null,
+  paused: null, snapshot: null, checkpoints: [], branchDecisions: [], timeline: [], runs: [], inputSchema: null, projectRoot: null,
   tokens: {}, llmPending: {}, nodeDocs: {}, nodeKinds: {}, edgeLabels: {}, nodeSources: {},
   hasCheckpointer: null, langgraphVersion: null, workerPython: null,
 };
@@ -220,7 +223,7 @@ export function tokenSummary(state: CanvasState): TokenSummary {
   };
 }
 
-export type InspectorTab = "run" | "state" | "tokens" | "manual" | "health" | "branch";
+export type InspectorTab = "run" | "state" | "tokens" | "manual" | "health" | "branch" | "history";
 
 /** One row for the Branch panel (P1-3): the decision plus the alternatives NOT taken,
  *  each labelled by its router key, so the user sees which paths were skipped. Pure. */
@@ -230,6 +233,17 @@ export interface BranchRow {
   key: string | null;
   notTaken: { key: string; target: string }[];
 }
+/** One History row's derived fields (P1-4): node path as a readable chain, total tokens, and
+ *  run duration in ms. Time-of-day formatting is left to the component (locale-dependent). Pure. */
+export interface RunRow { path: string; tokens: number; durationMs: number | null }
+export function runSummary(rec: RunRecord): RunRow {
+  return {
+    path: rec.nodePath.join(" → ") || "(no nodes)",
+    tokens: rec.tokens.prompt + rec.tokens.completion,
+    durationMs: rec.endedAt === null ? null : rec.endedAt - rec.startedAt,
+  };
+}
+
 /** Split the time-travel checkpoint list (newest first) into the current run and the older
  *  runs stacked beneath it (P1-2 UX): re-running the same thread appends prior runs' whole
  *  lineage, so "current" = head down to and including its first `__start__`. Pure. */

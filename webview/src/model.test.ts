@@ -1,9 +1,29 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, sourceLabel, splitCurrentRun, tokenSummary, topoOrder, type CanvasState } from "./model";
+import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, tokenSummary, topoOrder, type CanvasState, type RunRecord } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
+
+describe("run history (P1-4)", () => {
+  const mk = (over: Partial<RunRecord>): RunRecord => ({
+    runId: "r", threadId: "run", entry: "m:g", input: {}, startedAt: 1000, endedAt: 2800,
+    status: "completed", nodePath: ["ingest", "plan"], branches: [], tokens: { prompt: 10, completion: 4 }, error: null, ...over,
+  });
+
+  it("runSummary joins the path, sums tokens, computes duration", () => {
+    const s = runSummary(mk({ nodePath: ["a", "b", "c"], tokens: { prompt: 100, completion: 20 } }));
+    expect(s.path).toBe("a → b → c");
+    expect(s.tokens).toBe(120);
+    expect(s.durationMs).toBe(1800);
+  });
+
+  it("runSummary handles an empty path and an unfinished run", () => {
+    const s = runSummary(mk({ nodePath: [], endedAt: null }));
+    expect(s.path).toBe("(no nodes)");
+    expect(s.durationMs).toBeNull();
+  });
+});
 
 describe("splitCurrentRun (P1-2 time-travel readability)", () => {
   const cp = (node: string | null, id: string) => ({ node, checkpointId: id });

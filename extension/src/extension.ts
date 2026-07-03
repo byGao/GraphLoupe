@@ -12,8 +12,10 @@ import { ChildProcess, spawn, spawnSync } from "node:child_process";
 import { AddressInfo, createServer } from "node:net";
 import { mkdirSync, writeFileSync } from "node:fs";
 import WebSocket from "ws";
-import { parseServerEvent } from "../../protocol";
+import { parseServerEvent, type ClientCommand, type ServerEvent } from "../../protocol";
 import { renderAdapter, ADAPTER_ENTRY } from "./entryWizard";
+import { RunRecorder } from "./runRecorder";
+import { appendRun, readRuns } from "./runStore";
 import {
   initialStatus, nextStatus, statusLabel, spawnErrorMessage,
   type SidecarStatus, type SidecarEvent,
@@ -35,6 +37,34 @@ let status: SidecarStatus = initialStatus;
 const expectedKills = new WeakSet<ChildProcess>();  // children we asked to stop
 let stderrTail: string[] = [];
 let interpreterLabel: string | undefined;  // resolved Python, shown in the status-bar tooltip
+let recorder = new RunRecorder();           // accumulates the current run for history (P1-4)
+let currentEntry = "";                       // graphEntry of the active session, for run records
+let currentProjectRoot = "";                 // where .graphloupe/runs.jsonl lives
+
+/** Persist a finished run and push the refreshed history to the webview (P1-4). Best-effort:
+ *  history never breaks a run, so a write failure only logs. */
+function recordRun(rec: import("../../runhistory").RunRecord): void {
+  if (!currentProjectRoot) return;  // no folder open -> nowhere to persist
+  try {
+    appendRun(currentProjectRoot, rec);
+  } catch (err) {
+    console.error("[graphloupe] append run", err);
+  }
+  broadcastHistory();
+}
+
+/** Send the recent run history to the webview (on session start + after each run). */
+function broadcastHistory(): void {
+  if (!currentProjectRoot) return;
+  postToWebview({ type: "run_history", records: readRuns(currentProjectRoot) });
+}
+
+/** Bridge one server event: feed the run recorder, forward to the webview, persist on finish. */
+function onServerEvent(ev: ServerEvent): void {
+  const rec = recorder.onEvent(ev, currentEntry);
+  postToWebview(ev);
+  if (rec) recordRun(rec);
+}
 
 /** Advance the lifecycle status and reflect it in the status bar. */
 function setStatus(ev: SidecarEvent): void {
@@ -352,6 +382,11 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
   const entry = cfg.get<string>("graphEntry") || "";
   const projectRoot = resolveProjectRoot();
 
+  // P1-4: fresh recorder per session (drops any half-open run); remember entry/root for records
+  recorder = new RunRecorder();
+  currentEntry = entry;
+  currentProjectRoot = projectRoot;
+
   const env = { ...process.env };
   if (entry) env.GRAPHLOUPE_GRAPH = entry;
   if (projectRoot) env.GRAPHLOUPE_PROJECT_ROOT = projectRoot;
@@ -421,8 +456,9 @@ async function startSession(context: vscode.ExtensionContext): Promise<void> {
         .showErrorMessage(`GraphLoupe: ${reason}.${tail ? `\n${tail}` : ""}`, "Restart Sidecar")
         .then((pick) => { if (pick === "Restart Sidecar") void startSession(context); });
     });
-    socket = await connect(port, (ev) => postToWebview(ev));
+    socket = await connect(port, (ev) => onServerEvent(ev as ServerEvent));
     setStatus({ t: "open" });
+    broadcastHistory();  // P1-4: show past runs as soon as the session connects
   } catch (err) {
     setStatus({ t: "connectFail", reason: (err as Error).message });
     vscode.window.showErrorMessage(`GraphLoupe: ${(err as Error).message}`);
@@ -472,6 +508,7 @@ export function activate(context: vscode.ExtensionContext): void {
             void openSource(msg.file, msg.line).catch((err) => console.error("[graphloupe] openSource", err));
             return;
           }
+          recorder.onCommand(msg as ClientCommand);  // P1-4: capture start_run input for the record
           try {
             socket?.send(JSON.stringify(msg));
           } catch (err) {

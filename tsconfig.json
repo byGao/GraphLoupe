@@ -12,5 +12,5 @@
     "noEmit": true,
     "types": ["node", "vscode"]
   },
-  "include": ["protocol.ts", "extension", "webview", "test"]
+  "include": ["protocol.ts", "runhistory.ts", "extension", "webview", "test"]
 }
