@@ -547,6 +547,7 @@ export default function App() {
   const [showOverview, setShowOverview] = useState(true);
   const [focused, setFocused] = useState<string | null>(null);
   const [tab, setTab] = useState<InspectorTab>("run");
+  const [tabMenuOpen, setTabMenuOpen] = useState(false);  // overflow "⋯" dropdown (P1-4)
   const rf = useRef<ReactFlowInstance | null>(null);
 
   // a manual-inference / breakpoint pause auto-surfaces the relevant inspector tab
@@ -800,19 +801,56 @@ export default function App() {
 
         {/* right inspector */}
         <div style={{ width: 330, flex: "0 0 330px", borderLeft: "1px solid var(--line)", background: "var(--surface)", display: "flex", flexDirection: "column", minHeight: 0 }}>
-          {/* wrap to a second row: 7 tabs can't fit one row in a 330px panel without clipping */}
-          <div style={{ display: "flex", flexWrap: "wrap", borderBottom: "1px solid var(--line)" }}>
-            {TABS.map((t) => (
-              <button key={t.id} onClick={() => setTab(t.id)}
-                style={{
-                  flex: "1 1 56px", border: "none", borderRadius: 0, background: tab === t.id ? "var(--surface-2)" : "transparent",
-                  color: tab === t.id ? "var(--text)" : "var(--muted)", padding: "7px 4px", fontSize: 12, whiteSpace: "nowrap",
-                  borderBottom: tab === t.id ? "2px solid var(--node)" : "2px solid transparent",
-                }}>
-                {t.label}{t.dot ? " ●" : ""}
-              </button>
-            ))}
-          </div>
+          {/* 7 tabs don't fit one 330px row: show the first few, the rest live behind a "⋯"
+              overflow menu (one row = one flat level, so nothing reads as a sub-tab). */}
+          {(() => {
+            const MAX_VISIBLE = 5;
+            const visible = TABS.slice(0, MAX_VISIBLE);
+            const overflow = TABS.slice(MAX_VISIBLE);
+            const activeInOverflow = overflow.some((t) => t.id === tab);
+            const overflowDot = overflow.some((t) => t.dot);
+            const tabBtn = (t: typeof TABS[number], active: boolean, full: boolean): CSSProperties => ({
+              flex: full ? 1 : "0 0 auto", border: "none", borderRadius: 0,
+              background: active ? "var(--surface-2)" : "transparent",
+              color: active ? "var(--text)" : "var(--muted)", padding: "7px 8px", fontSize: 12, whiteSpace: "nowrap",
+              cursor: "pointer", borderBottom: active ? "2px solid var(--node)" : "2px solid transparent",
+            });
+            return (
+              <div style={{ display: "flex", borderBottom: "1px solid var(--line)", position: "relative" }}>
+                {visible.map((t) => (
+                  <button key={t.id} onClick={() => { setTab(t.id); setTabMenuOpen(false); }} style={tabBtn(t, tab === t.id, true)}>
+                    {t.label}{t.dot ? " ●" : ""}
+                  </button>
+                ))}
+                {overflow.length > 0 && (
+                  <button title="More panels" onClick={() => setTabMenuOpen((o) => !o)}
+                    style={{ ...tabBtn(TABS[0], activeInOverflow, false), width: 40, textAlign: "center", position: "relative" }}>
+                    ⋯{overflowDot ? <span style={{ color: "var(--node)" }}> ●</span> : ""}
+                  </button>
+                )}
+                {tabMenuOpen && overflow.length > 0 && (
+                  <>
+                    {/* click-away backdrop */}
+                    <div onClick={() => setTabMenuOpen(false)}
+                      style={{ position: "fixed", inset: 0, zIndex: 9 }} />
+                    <div style={{ position: "absolute", top: "100%", right: 0, zIndex: 10, minWidth: 130,
+                      background: "var(--surface-2)", border: "1px solid var(--line)", borderRadius: 6, padding: 4,
+                      boxShadow: "0 6px 18px rgba(0,0,0,0.4)" }}>
+                      {overflow.map((t) => (
+                        <button key={t.id} onClick={() => { setTab(t.id); setTabMenuOpen(false); }}
+                          style={{ display: "flex", width: "100%", alignItems: "center", gap: 6, textAlign: "left",
+                            border: "none", background: tab === t.id ? "var(--surface)" : "transparent",
+                            color: tab === t.id ? "var(--text)" : "var(--muted)", padding: "6px 10px", borderRadius: 4,
+                            fontSize: 12, cursor: "pointer" }}>
+                          {t.label}{t.dot ? <span style={{ color: "var(--node)" }}> ●</span> : ""}
+                        </button>
+                      ))}
+                    </div>
+                  </>
+                )}
+              </div>
+            );
+          })()}
           <div style={{ flex: 1, overflow: "auto", minHeight: 0 }}>
             {tab === "run" && (
               <div style={{ padding: "10px 12px" }}>
