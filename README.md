@@ -22,9 +22,17 @@ economy, run-input form, jump-to-source…).
 
 ## What it does
 
-- **Step debugging** — breakpoints on any node, a state snapshot + diff at each step,
-  single-step, and time-travel (fork any checkpoint and re-run). Needs
-  `compile(checkpointer=…)`.
+- **Step debugging** — breakpoints on any node, single-step, and time-travel (fork any
+  checkpoint and re-run). Needs `compile(checkpointer=…)`.
+- **State, three ways** — the **State** tab has **Raw** (current values), **Diff** (the last
+  super-step's `before → after` per channel), and **Timeline** (every step's changes across
+  the whole run, reconstructed from the checkpoints).
+- **Branch decisions** — the **Branch** tab answers *"why did it go there?"*: for each
+  conditional edge, the key it chose (`gate → synthesize (approve)`) and the paths it didn't
+  take — reconstructed from the committed checkpoint lineage.
+- **Run history & comparison** — every run is saved to `.graphloupe/runs.jsonl`; the
+  **History** tab lists them, and ticking two shows a **comparison** — first divergence node,
+  the branch decisions that differ, and token / latency / status deltas.
 - **Manual inference** *(the differentiator)* — a node pauses with `interrupt()`, you copy
   the rendered prompt into any chat, paste the answer back, and the graph resumes with zero
   state loss. Text and `tool_call` both supported.
@@ -61,8 +69,9 @@ package`), then Extensions view → `⋯` → **Install from VSIX…**.
    try it, set the entry to **`graphloupe_sidecar.graph:showcase_graph`** (a built-in graph
    that exercises every feature).
 3. **▶ Run.** Nodes light up; at the manual node the **Manual** tab opens with the prompt —
-   paste an answer to steer the flow. Set a breakpoint (click a node) to pause in **State**;
-   after a run the **Tokens** tab shows per-node counts; the **Health** tab shows what's set up.
+   paste an answer to steer the flow. Set a breakpoint (click a node) to pause in **State**
+   (Raw / Diff / Timeline); **Branch** shows which conditional paths it took; **History** lists
+   past runs (tick two to compare); **Tokens** shows per-node counts; **Health** shows what's set up.
 
 See the full [getting-started guide](https://bygao.github.io/GraphLoupe/) for connecting
 your own graph and enabling each feature.

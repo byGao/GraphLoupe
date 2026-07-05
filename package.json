@@ -2,7 +2,7 @@
   "name": "graphloupe",
   "displayName": "GraphLoupe",
   "description": "LangGraph execution-visualization / debugging IDE (VS Code Extension host).",
-  "version": "0.3.0",
+  "version": "0.4.0",
   "publisher": "byGao",
   "license": "MIT",
   "icon": "media/icon.png",

@@ -60,7 +60,9 @@
   <a href="#connect">Connect your graph</a>
   <div class="grp">Enable each feature</div>
   <a href="#minimal">Minimal graph</a>
-  <a href="#debug">Step debugging</a>
+  <a href="#debug">Step debugging &amp; state</a>
+  <a href="#branch">Branch decisions</a>
+  <a href="#history">Run history &amp; compare</a>
   <a href="#manual">Manual inference</a>
   <a href="#tokens">Token economy</a>
   <a href="#form">Run-input form</a>
@@ -130,8 +132,8 @@ def build_graph():
     return g.compile()</code></pre>
   <p>A <b>docstring</b> on each node function shows as the node's purpose in the overview.</p>
 
-  <h2 id="debug">Step debugging — add a checkpointer</h2>
-  <p>Breakpoints, state snapshot + diff, single-step, and time-travel all need a checkpointer.
+  <h2 id="debug">Step debugging &amp; state — add a checkpointer</h2>
+  <p>Breakpoints, the state views, single-step, and time-travel all need a checkpointer.
   Compile with one:</p>
   <pre><code>from langgraph.checkpoint.memory import MemorySaver
 
@@ -141,13 +143,47 @@ def build_graph():
     return g.compile(checkpointer=MemorySaver())   # ← this line unlocks debugging</code></pre>
   <ul>
     <li><b>Breakpoint</b>: click a node → it pauses <em>before</em> that node on the next run.</li>
-    <li><b>State tab</b>: the checkpoint's state values + a diff from the previous step.</li>
     <li><b>Step / Continue</b>: advance one node, or run to the next breakpoint.</li>
     <li><b>Time-travel</b>: the State tab lists the run's checkpoints — click one to fork and re-run
       from there.</li>
   </ul>
-  <div class="note">No checkpointer? The graph still runs to completion and renders, but can't pause.
-  The <b>Health</b> tab flags this.</div>
+  <p>The <b>State</b> tab has three views:</p>
+  <ul>
+    <li><b>Raw</b> — the current checkpoint's state values as JSON.</li>
+    <li><b>Diff</b> — the last super-step's change per channel, as <code>~ steps: 2 → 3</code> /
+      <code>+ notes: …</code> / <code>− tmp: …</code> (long values and lists are summarised).</li>
+    <li><b>Timeline</b> — every step of the whole run (<code>1 · ingest</code>, <code>2 · plan</code>, …)
+      with what each node changed, reconstructed from the checkpoint lineage.</li>
+  </ul>
+  <div class="note">No checkpointer? The graph still runs to completion and renders, but can't pause,
+  diff, or time-travel. The <b>Health</b> tab flags this.</div>
+
+  <h2 id="branch">Branch decisions — see why it routed</h2>
+  <p>Any <code>add_conditional_edges</code> (a router) is where a run "decides". The <b>Branch</b> tab
+  reconstructs each decision from the committed checkpoints — no code changes needed, just a
+  checkpointer:</p>
+  <pre><code>def route(state: State) -> str:
+    return "approve" if state["ok"] else "redo"
+
+g.add_conditional_edges("gate", route, {"redo": "plan", "approve": "synthesize", "abort": END})</code></pre>
+  <p>For each decision the tab shows the chosen key and target (<code>gate → synthesize (approve)</code>)
+  and the paths <em>not</em> taken (<code>redo → plan · abort → __end__</code>) — so a loop reads as the
+  sequence of gate decisions it actually made.</p>
+
+  <h2 id="history">Run history &amp; comparison</h2>
+  <p>Every finished run is appended to <code>&lt;projectRoot&gt;/.graphloupe/runs.jsonl</code> and listed
+  in the <b>History</b> tab (status, time, duration, tokens, node count) — it survives reloads. Click a
+  run to expand its node path, branch decisions, and tokens.</p>
+  <p><b>Compare two runs</b>: tick two in the History list and a comparison card appears —</p>
+  <ul>
+    <li><b>First divergence</b> — the step where their node paths split (<code>A: synthesize · B: plan</code>).</li>
+    <li><b>Branch decisions that differ</b> — sequence-aligned, so an extra loop reads as
+      <code>+ B only gate → plan (redo)</code> rather than mis-pairing every later decision.</li>
+    <li><b>Deltas</b> — status, node count, tokens (Δ), and duration (Δ).</li>
+  </ul>
+  <div class="note">Each run executes on its own thread, so History / Branch / Timeline / comparison
+  each reflect <em>that</em> run only. <code>.graphloupe/</code> is per-project — add it to your
+  <code>.gitignore</code>.</div>
 
   <h2 id="manual">Manual inference — pause and paste an answer</h2>
   <p>Turn "human + any chat" into a pluggable model. Call <code>interrupt()</code> with a
