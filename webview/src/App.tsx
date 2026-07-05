@@ -6,7 +6,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, makeRunThreadId, needsGraphSelection, nodeKind,
+  autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formatValue, formFields, healthChecks, initialState, makeRunThreadId, needsGraphSelection, nodeKind,
   overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, toggleCompare, tokenSummary,
   type BranchRow, type CanvasState, type CheckpointRef, type DiffEntry, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type RunRecord, type Snapshot, type StateStep,
 } from "./model";
@@ -405,6 +405,20 @@ function ComparePanel({ a, b }: { a: RunRecord; b: RunRecord }) {
             </div>
           ))}
       </div>
+      {(Object.keys(a.finalState).length > 0 || Object.keys(b.finalState).length > 0) && (
+        <div style={{ marginTop: 6 }}>
+          <div style={{ color: "#6e7681", fontSize: 11, marginBottom: 2 }}>final state:</div>
+          {c.stateDiffs.length === 0
+            ? <div style={{ color: "#3fb950", fontSize: 11 }}>✓ same final state</div>
+            : c.stateDiffs.map((d, i) => (
+              <div key={i} style={{ fontSize: 11, fontFamily: "var(--mono)", marginTop: 2 }}>
+                {d.kind === "changed" && <span style={{ color: "#d29922" }}>~ {d.channel}: {formatValue(d.a)} → {formatValue(d.b)}</span>}
+                {d.kind === "b-only" && <span style={{ color: "#3fb950" }}>+ B only {d.channel}: {formatValue(d.b)}</span>}
+                {d.kind === "a-only" && <span style={{ color: "#8b949e" }}>− A only {d.channel}: {formatValue(d.a)}</span>}
+              </div>
+            ))}
+        </div>
+      )}
     </div>
   );
 }

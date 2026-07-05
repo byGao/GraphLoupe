@@ -40,6 +40,7 @@ export const RunRecord = z.object({
   branches: z.array(RunBranch),
   tokens: RunTokens,
   error: z.string().nullable(),
+  finalState: z.record(z.any()).default({}),  // the run's final state values (P1-5d); {} for pre-P1-5d records
 });
 export type RunRecord = z.infer<typeof RunRecord>;
 
@@ -72,6 +73,9 @@ export function parseRunsFile(content: string, cap: number): RunRecord[] {
 export type BranchDiffKind = "a-only" | "b-only" | "changed";
 export interface BranchDiff { kind: BranchDiffKind; a: RunBranch | null; b: RunBranch | null }
 
+// One channel where the two runs' FINAL state differs (P1-5d): a-only / b-only / changed.
+export interface StateKeyDiff { channel: string; kind: BranchDiffKind; a: unknown; b: unknown }
+
 export interface RunComparison {
   firstDivergenceIndex: number | null;  // first nodePath index where a and b differ (or where one ends); null if identical
   pathIdentical: boolean;                // same nodes in the same order and length
@@ -80,6 +84,21 @@ export interface RunComparison {
   statusChanged: boolean;
   inputChanged: boolean;
   branchDiffs: BranchDiff[];             // branch decisions that differ, aligned by sequence (LCS)
+  stateDiffs: StateKeyDiff[];            // final-state channels that differ (P1-5d)
+}
+
+/** Diff two runs' final state by channel (P1-5d): a channel is `changed` when both have it
+ *  with different values (JSON-compared), else `a-only` / `b-only`; equal channels omitted.
+ *  Sorted by channel for stable rendering/tests. Pure. */
+function diffState(a: Record<string, unknown>, b: Record<string, unknown>): StateKeyDiff[] {
+  const out: StateKeyDiff[] = [];
+  for (const ch of [...new Set([...Object.keys(a), ...Object.keys(b)])].sort()) {
+    const inA = ch in a, inB = ch in b;
+    if (inA && !inB) out.push({ channel: ch, kind: "a-only", a: a[ch], b: undefined });
+    else if (!inA && inB) out.push({ channel: ch, kind: "b-only", a: undefined, b: b[ch] });
+    else if (JSON.stringify(a[ch]) !== JSON.stringify(b[ch])) out.push({ channel: ch, kind: "changed", a: a[ch], b: b[ch] });
+  }
+  return out;
 }
 
 function sameBranch(a: RunBranch, b: RunBranch): boolean {
@@ -141,5 +160,6 @@ export function compareRuns(a: RunRecord, b: RunRecord): RunComparison {
     statusChanged: a.status !== b.status,
     inputChanged: JSON.stringify(a.input) !== JSON.stringify(b.input),
     branchDiffs: branchesDiff(a.branches, b.branches),
+    stateDiffs: diffState(a.finalState, b.finalState),
   };
 }

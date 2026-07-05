@@ -17,6 +17,7 @@ interface InProgress {
   prompt: number;
   completion: number;
   error: string | null;
+  finalState: Record<string, unknown>;
 }
 
 export class RunRecorder {
@@ -44,7 +45,7 @@ export class RunRecorder {
         const startedAt = this.now();
         this.cur = {
           runId: `${ev.runId}-${startedAt}-${this.seq++}`, threadId: ev.threadId, entry, input: this.pendingInput,
-          startedAt, nodePath: [], branches: [], prompt: 0, completion: 0, error: null,
+          startedAt, nodePath: [], branches: [], prompt: 0, completion: 0, error: null, finalState: {},
         };
         this.pendingInput = {};
         return null;
@@ -68,6 +69,10 @@ export class RunRecorder {
           this.cur.completion += ev.tokens.completion ?? 0;
         }
         return null;
+      case "state_snapshot":
+        // keep the latest full state; the worker emits one at completion (P1-5d)
+        if (this.cur) this.cur.finalState = ev.snapshot.values;
+        return null;
       case "error":
         if (this.cur) this.cur.error = `${ev.code}: ${ev.message}`;
         return null;
@@ -87,6 +92,7 @@ export class RunRecorder {
       startedAt: c.startedAt, endedAt: this.now(), status,
       nodePath: c.nodePath, branches: c.branches,
       tokens: { prompt: c.prompt, completion: c.completion }, error: c.error,
+      finalState: c.finalState,
     };
   }
 }

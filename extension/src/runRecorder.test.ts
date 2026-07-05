@@ -63,6 +63,15 @@ describe("RunRecorder (P1-4)", () => {
     expect(r.onEvent(ev({ type: "run_finished", threadId: "run", runId: "x", status: "completed", checkpointId: null }), ENTRY)).toBeNull();
   });
 
+  it("captures the final state from the completion state_snapshot (P1-5d)", () => {
+    const r = new RunRecorder(clock());
+    r.onEvent(ev({ type: "run_started", threadId: "run", runId: "r", checkpointId: null }), ENTRY);
+    r.onEvent(ev({ type: "state_snapshot", threadId: "run", checkpointId: "c",
+      snapshot: { values: { steps: 3, note: "done" }, diff: [] } }), ENTRY);
+    const rec = r.onEvent(ev({ type: "run_finished", threadId: "run", runId: "r", status: "completed", checkpointId: null }), ENTRY)!;
+    expect(rec.finalState).toEqual({ steps: 3, note: "done" });
+  });
+
   it("mints a DISTINCT runId per run even when the worker reuses the same runId/thread", () => {
     const r = new RunRecorder(clock());
     const finish = () => {

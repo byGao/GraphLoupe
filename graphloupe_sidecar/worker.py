@@ -485,6 +485,17 @@ def _state_timeline(graph: Any, thread_id: str) -> str:
     return P.StateTimeline(threadId=thread_id, steps=steps).model_dump_json()
 
 
+def _final_state(graph: Any, thread_id: str) -> str:
+    """The run's final state as a StateSnapshotEvent (P1-5d): the head checkpoint's values,
+    with a diff against its parent (the genuine last super-step). Emitted at completion so
+    History/comparison have a `finalState` and the State Raw view has values post-run — a
+    normal completed run otherwise emits full state only at breakpoint pauses."""
+    s = graph.get_state({"configurable": {"thread_id": thread_id}})
+    ckpt = s.config["configurable"].get("checkpoint_id", "-") if s.config else "-"
+    prev = graph.get_state(s.parent_config).values if s.parent_config else {}
+    return _snapshot(thread_id, ckpt, s.values or {}, prev or {})
+
+
 def _fork_target(graph: Any, thread_id: str, cmd: dict[str, Any]) -> dict[str, Any] | None:
     """Resolve a fork command into a resume config; emit checkpoint_not_found on a miss."""
     ckpt_id = cmd.get("checkpointId")
@@ -590,7 +601,6 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
         if has_checkpointer:
             bp_before, after = _bp_lists(breakpoints)
             before = sorted(nodes) if step_mode else bp_before
-        was_fork = fork_config is not None
         await _stream(graph, nodes, source, thread_id, before, after, config=fork_config)
         fork_config = None
         if _aborted():
@@ -602,10 +612,9 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
             if has_checkpointer:
                 _emit(_branch_decisions(graph, thread_id))  # router decisions for the run (P1-3)
                 _emit(_state_timeline(graph, thread_id))    # per-step state evolution (P1-2)
-            # a fork/time-travel run reports its final state so the UI can show the result
-            if was_fork and state is not None:
-                fckpt = state.config["configurable"]["checkpoint_id"] if state.config else "-"
-                _emit(_snapshot(thread_id, fckpt, state.values, {}))
+                # final state so History/comparison have a finalState and Raw shows values
+                # post-run (P1-5d; supersedes the old fork-only snapshot)
+                _emit(_final_state(graph, thread_id))
             return
         intr = _interrupt_from_state(state)
         if intr is not None:  # manual inference (PHASE 2)

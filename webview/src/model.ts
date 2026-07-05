@@ -271,7 +271,7 @@ export function splitCurrentRun(checkpoints: CheckpointRef[]): { current: Checkp
 const DIFF_MAXLEN = 40;
 /** Summarize a state value for a diff line (P1-2): long strings truncated, list/dict shown
  *  as a count so a big payload doesn't dump raw JSON into the line. Pure. */
-function formatValue(v: unknown): string {
+export function formatValue(v: unknown): string {
   if (v === null || v === undefined) return "∅";
   if (typeof v === "string") return v.length > DIFF_MAXLEN ? v.slice(0, DIFF_MAXLEN) + "…" : v;
   if (typeof v === "number" || typeof v === "boolean") return String(v);

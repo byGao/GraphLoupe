@@ -7,7 +7,7 @@ const rec = {
   input: { topic: "hi" }, startedAt: 1000, endedAt: 1800, status: "completed" as const,
   nodePath: ["ingest", "plan", "review", "gate", "synthesize"],
   branches: [{ source: "gate", key: "approve", target: "synthesize" }],
-  tokens: { prompt: 180, completion: 34 }, error: null,
+  tokens: { prompt: 180, completion: 34 }, error: null, finalState: { steps: 3 },
 };
 
 describe("RunRecord (P1-4)", () => {
@@ -99,5 +99,32 @@ describe("compareRuns (P1-5)", () => {
 
   it("returns no branch diffs when the decision sequences are identical", () => {
     expect(diffs([br("approve", "synth")], [br("approve", "synth")])).toEqual([]);
+  });
+
+  // P1-5d: final-state diff by channel
+  it("diffs final state by channel (changed / a-only / b-only, equal omitted)", () => {
+    const c = compareRuns(
+      mk({ finalState: { steps: 3, shared: 1, gone: "x" } }),
+      mk({ finalState: { steps: 5, shared: 1, summary: "…" } }),
+    );
+    expect(c.stateDiffs).toEqual([
+      { channel: "gone", kind: "a-only", a: "x", b: undefined },
+      { channel: "steps", kind: "changed", a: 3, b: 5 },
+      { channel: "summary", kind: "b-only", a: undefined, b: "…" },
+    ]);  // sorted by channel; `shared` (equal) omitted
+  });
+
+  it("has no state diffs for identical final state", () => {
+    expect(compareRuns(mk({ finalState: { x: 1 } }), mk({ finalState: { x: 1 } })).stateDiffs).toEqual([]);
+  });
+});
+
+describe("RunRecord finalState backward-compat (P1-5d)", () => {
+  it("defaults finalState to {} for a pre-P1-5d record (no field)", () => {
+    const old = { ...rec } as Record<string, unknown>;
+    delete old.finalState;
+    const parsed = parseRunRecord(JSON.stringify(old));
+    expect(parsed).not.toBeNull();
+    expect(parsed!.finalState).toEqual({});
   });
 });

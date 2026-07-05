@@ -8,7 +8,7 @@ const ev = (e: unknown) => e as ServerEvent;
 describe("run history (P1-4)", () => {
   const mk = (over: Partial<RunRecord>): RunRecord => ({
     runId: "r", threadId: "run", entry: "m:g", input: {}, startedAt: 1000, endedAt: 2800,
-    status: "completed", nodePath: ["ingest", "plan"], branches: [], tokens: { prompt: 10, completion: 4 }, error: null, ...over,
+    status: "completed", nodePath: ["ingest", "plan"], branches: [], tokens: { prompt: 10, completion: 4 }, error: null, finalState: {}, ...over,
   });
 
   it("runSummary joins the path, sums tokens, computes duration", () => {
