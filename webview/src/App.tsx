@@ -145,7 +145,7 @@ type StateView = "raw" | "diff" | "timeline";
  *  Diff (last super-step's before→after per channel), Timeline (per-step evolution across
  *  the whole run, reconstructed from the checkpoint lineage). Pause adds Step / Continue /
  *  Fork controls; the views themselves also read after a completed run (Timeline). */
-function StatePanel({ state }: { state: CanvasState }) {
+export function StatePanel({ state }: { state: CanvasState }) {
   const { paused, snapshot, timeline } = state;
   const [view, setView] = useState<StateView>(paused ? "diff" : "timeline");
   const [override, setOverride] = useState("");
@@ -311,7 +311,7 @@ function HealthPanel({ checks, version, python }: { checks: HealthCheck[]; versi
 /** Branch decisions taken this run (P1-3): each conditional edge's chosen key -> target,
  *  with the paths NOT taken listed beneath, so the "why did it go here?" is answered from
  *  the committed checkpoint lineage rather than guessed from the graph shape. */
-function BranchPanel({ rows, hasCheckpointer }: { rows: BranchRow[]; hasCheckpointer: boolean | null }) {
+export function BranchPanel({ rows, hasCheckpointer }: { rows: BranchRow[]; hasCheckpointer: boolean | null }) {
   if (rows.length === 0) {
     const detail = hasCheckpointer === false
       ? "No checkpointer — router decisions can't be reconstructed. Add compile(checkpointer=…)."
@@ -352,7 +352,7 @@ const fmtBranch = (b: RunBranch | null): string =>
   b ? `${b.source} → ${b.target}${b.key ? ` (${b.key})` : ""}` : "—";
 
 /** Compare two runs (P1-5): first divergence in the node path + per-metric deltas. */
-function ComparePanel({ a, b }: { a: RunRecord; b: RunRecord }) {
+export function ComparePanel({ a, b }: { a: RunRecord; b: RunRecord }) {
   const c = compareRuns(a, b);
   const d = c.firstDivergenceIndex;
   const durLabel = c.durationDelta === null ? "—"
@@ -425,7 +425,7 @@ function ComparePanel({ a, b }: { a: RunRecord; b: RunRecord }) {
 
 /** Run History (P1-4/P1-5): past runs from .graphloupe/runs.jsonl, newest first. Click a run
  *  to expand it; tick two runs to compare them (first divergence + deltas). */
-function HistoryPanel({ runs }: { runs: RunRecord[] }) {
+export function HistoryPanel({ runs }: { runs: RunRecord[] }) {
   const [open, setOpen] = useState<string | null>(null);
   const [cmp, setCmp] = useState<string[]>([]);
   if (runs.length === 0) {

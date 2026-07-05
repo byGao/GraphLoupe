@@ -199,14 +199,15 @@ describe("canvas reducer", () => {
     expect(s.pending).toBeNull();
   });
 
-  it("breakpoint_hit -> paused; state_snapshot -> snapshot; run_finished clears", () => {
+  it("breakpoint_hit -> paused; state_snapshot -> snapshot; run_finished clears pause but KEEPS the final state (P1-5d)", () => {
     let s = reduce(initialState, ev({ type: "breakpoint_hit", node: "b", when: "before", checkpointId: "c1" }));
     expect(s.paused).toEqual({ node: "b", checkpointId: "c1" });
     s = reduce(s, ev({ type: "state_snapshot", snapshot: { values: { log: ["a"] }, diff: [{ channel: "log", op: "add", before: null, after: ["a"] }] } }));
     expect(s.snapshot?.values).toEqual({ log: ["a"] });
     s = reduce(s, ev({ type: "run_finished", status: "completed" }));
     expect(s.paused).toBeNull();
-    expect(s.snapshot).toBeNull();
+    expect(s.snapshot?.values).toEqual({ log: ["a"] });   // kept so State Raw shows the run's result
+    expect(reduce(s, ev({ type: "run_started" })).snapshot).toBeNull();  // next run clears it
   });
 
   it("checkpoint_history populates the time-travel timeline; run_started clears it", () => {

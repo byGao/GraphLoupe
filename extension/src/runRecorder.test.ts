@@ -63,13 +63,23 @@ describe("RunRecorder (P1-4)", () => {
     expect(r.onEvent(ev({ type: "run_finished", threadId: "run", runId: "x", status: "completed", checkpointId: null }), ENTRY)).toBeNull();
   });
 
-  it("captures the final state from the completion state_snapshot (P1-5d)", () => {
+  it("captures the final state from the state_snapshot emitted BEFORE run_finished (P1-5d)", () => {
     const r = new RunRecorder(clock());
     r.onEvent(ev({ type: "run_started", threadId: "run", runId: "r", checkpointId: null }), ENTRY);
+    // the worker must emit the final snapshot BEFORE run_finished (that's the real order)
     r.onEvent(ev({ type: "state_snapshot", threadId: "run", checkpointId: "c",
       snapshot: { values: { steps: 3, note: "done" }, diff: [] } }), ENTRY);
     const rec = r.onEvent(ev({ type: "run_finished", threadId: "run", runId: "r", status: "completed", checkpointId: null }), ENTRY)!;
     expect(rec.finalState).toEqual({ steps: 3, note: "done" });
+  });
+
+  it("a state_snapshot AFTER run_finished is too late — encodes why the worker must emit before (P1-5d)", () => {
+    const r = new RunRecorder(clock());
+    r.onEvent(ev({ type: "run_started", threadId: "run", runId: "r", checkpointId: null }), ENTRY);
+    const rec = r.onEvent(ev({ type: "run_finished", threadId: "run", runId: "r", status: "completed", checkpointId: null }), ENTRY)!;
+    // record already finalized; a trailing snapshot can't reach it
+    r.onEvent(ev({ type: "state_snapshot", threadId: "run", checkpointId: "c", snapshot: { values: { steps: 3 }, diff: [] } }), ENTRY);
+    expect(rec.finalState).toEqual({});  // hence the worker emits the final snapshot BEFORE run_finished
   });
 
   it("mints a DISTINCT runId per run even when the worker reuses the same runId/thread", () => {

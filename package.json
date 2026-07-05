@@ -79,6 +79,7 @@
     "test": "vitest run",
     "check": "npm run typecheck && npm run test && npm run build",
     "render-docs": "node scripts/render-docs.mjs",
+    "render-panels": "node tools/render-panels.mjs",
     "vscode:prepublish": "npm run build",
     "package": "vsce package"
   },

@@ -608,13 +608,14 @@ async def _run(graph: Any, nodes: set[str], thread_id: str, run_input: Any,
         step_mode = False
         state = graph.get_state(cfg) if has_checkpointer else None
         if state is None or not state.next:
-            _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="completed").model_dump_json())
+            # emit the run's reconstructions BEFORE run_finished so the extension's
+            # RunRecorder (which finalizes the history record on run_finished) captures
+            # branches + final state — for any run, not only ones that paused mid-way.
             if has_checkpointer:
                 _emit(_branch_decisions(graph, thread_id))  # router decisions for the run (P1-3)
                 _emit(_state_timeline(graph, thread_id))    # per-step state evolution (P1-2)
-                # final state so History/comparison have a finalState and Raw shows values
-                # post-run (P1-5d; supersedes the old fork-only snapshot)
-                _emit(_final_state(graph, thread_id))
+                _emit(_final_state(graph, thread_id))       # final state for History/compare + Raw (P1-5d)
+            _emit(P.RunFinished(threadId=thread_id, runId=thread_id, status="completed").model_dump_json())
             return
         intr = _interrupt_from_state(state)
         if intr is not None:  # manual inference (PHASE 2)

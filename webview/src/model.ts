@@ -437,7 +437,9 @@ export function reduce(state: CanvasState, ev: ServerEvent): CanvasState {
         },
       };
     case "run_finished":
-      return { ...state, running: false, active: null, pending: null, paused: null, snapshot: null };
+      // keep `snapshot`: the worker emits the final state just before run_finished (P1-5d),
+      // so the State Raw/Diff views show the run's result. run_started clears it next run.
+      return { ...state, running: false, active: null, pending: null, paused: null };
     case "error":
       // graph_load_failed (and other sidecar errors) -> surface, don't blank-canvas.
       return { ...state, error: `${ev.code}: ${ev.message}`, running: false };
