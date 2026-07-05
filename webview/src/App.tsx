@@ -6,7 +6,7 @@ import {
 } from "@xyflow/react";
 import "@xyflow/react/dist/style.css";
 import {
-  autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind,
+  autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, makeRunThreadId, needsGraphSelection, nodeKind,
   overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, toggleCompare, tokenSummary,
   type BranchRow, type CanvasState, type CheckpointRef, type DiffEntry, type HealthCheck, type InspectorTab, type ManualRequest, type Paused, type RunRecord, type Snapshot, type StateStep,
 } from "./model";
@@ -22,9 +22,20 @@ const vscode = acquireVsCodeApi();
 declare const __GL_VERSION__: string;
 const GL_VERSION = typeof __GL_VERSION__ !== "undefined" ? __GL_VERSION__ : "dev";
 
-/** Post a StartRun with the graph's initial-state input object. */
+// The thread the CURRENT run executes on (P1-5c). Each ▶ Run mints a fresh one so the
+// worker's lineage-based reconstruction doesn't bleed across runs; step / fork / cancel /
+// Continue all target this same thread for the duration of the run.
+let currentRunThread = "run";
+let runThreadSeq = 0;
+/** Mint + adopt a new thread for a fresh run. Call on ▶ Run (not on Continue, which
+ *  keeps running the same run/thread). */
+function newRunThread(): void {
+  currentRunThread = makeRunThreadId(runThreadSeq++, Date.now());
+}
+
+/** Post a StartRun with the graph's initial-state input object, on the current run thread. */
 function sendRunObject(input: unknown): void {
-  vscode.postMessage({ v: "0.1.0", corr: null, type: "start_run", threadId: null, input, providerMode: "manual" });
+  vscode.postMessage({ v: "0.1.0", corr: null, type: "start_run", threadId: currentRunThread, input, providerMode: "manual" });
 }
 
 function sendRun(inputText: string): void {
@@ -75,7 +86,7 @@ function CheckpointTimeline({ checkpoints }: { checkpoints: CheckpointRef[] }) {
     return (
       <button key={c.checkpointId}
         disabled={now}
-        onClick={() => postCmd({ type: "fork", threadId: "run", checkpointId: c.checkpointId })}
+        onClick={() => postCmd({ type: "fork", threadId: currentRunThread, checkpointId: c.checkpointId })}
         title={now ? "current position" : `rewind to before ${c.node ?? "end"}`}
         style={{
           display: "flex", alignItems: "center", gap: 8, textAlign: "left",
@@ -154,8 +165,8 @@ function StatePanel({ state }: { state: CanvasState }) {
         </span>
         {paused && (
           <>
-            <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: "run", runId: "run" })}>⏭ Step</button>
-            <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: null, input: {}, providerMode: "manual" })}>▶ Continue</button>
+            <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "step", threadId: currentRunThread, runId: "run" })}>⏭ Step</button>
+            <button style={{ fontSize: 12 }} onClick={() => postCmd({ type: "start_run", threadId: currentRunThread, input: {}, providerMode: "manual" })}>▶ Continue</button>
           </>
         )}
       </div>
@@ -216,7 +227,7 @@ function StatePanel({ state }: { state: CanvasState }) {
           <button style={{ marginTop: 4, fontSize: 12 }} onClick={() => {
             let stateOverride: unknown = null;
             if (override.trim()) { try { stateOverride = JSON.parse(override); } catch { stateOverride = null; } }
-            postCmd({ type: "fork", threadId: "run", checkpointId: paused.checkpointId, stateOverride });
+            postCmd({ type: "fork", threadId: currentRunThread, checkpointId: paused.checkpointId, stateOverride });
           }}>Fork ↩</button>
         </div>
       )}
@@ -783,10 +794,12 @@ export default function App() {
     });
   }, [nodes, setRfNodes]);
 
-  const runGraph = () =>
-    state.inputSchema && !showRaw
+  const runGraph = () => {
+    newRunThread();  // P1-5c: each ▶ Run gets its own thread so runs stay isolated
+    return state.inputSchema && !showRaw
       ? sendRunObject(buildInput(state.inputSchema, form))
       : sendRun(inputText);
+  };
 
   const health = healthChecks(state);
   const branches = branchRows(state);
@@ -806,7 +819,7 @@ export default function App() {
       <div style={{ padding: 8, borderBottom: "1px solid var(--line)", display: "flex", alignItems: "center", gap: 8 }}>
         <button disabled={state.running} onClick={runGraph}>▶ Run</button>
         {(state.running || state.paused || state.pending) && (
-          <button onClick={() => postCmd({ type: "cancel", threadId: "run", runId: "run" })}
+          <button onClick={() => postCmd({ type: "cancel", threadId: currentRunThread, runId: "run" })}
             title="Abort the current run (keeps the graph loaded)"
             style={{ borderColor: "var(--danger)", color: "var(--danger)" }}>■ Stop</button>
         )}

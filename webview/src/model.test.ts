@@ -1,6 +1,6 @@
 /** R-04 logic (headless): topology render + active-node highlight. */
 import { describe, it, expect } from "vitest";
-import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, needsGraphSelection, nodeKind, overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, toggleCompare, tokenSummary, topoOrder, type CanvasState, type RunRecord } from "./model";
+import { autoTab, branchRows, buildInput, defaultForm, formatDiffEntry, formFields, healthChecks, initialState, makeRunThreadId, needsGraphSelection, nodeKind, overviewRows, reduce, runSummary, sourceLabel, splitCurrentRun, toggleCompare, tokenSummary, topoOrder, type CanvasState, type RunRecord } from "./model";
 import type { ServerEvent } from "../../protocol";
 
 const ev = (e: unknown) => e as ServerEvent;
@@ -29,6 +29,12 @@ describe("run history (P1-4)", () => {
     expect(toggleCompare(["a"], "a")).toEqual([]);            // re-toggle removes
     expect(toggleCompare(["a"], "b")).toEqual(["a", "b"]);
     expect(toggleCompare(["a", "b"], "c")).toEqual(["b", "c"]);  // cap 2, oldest "a" dropped
+  });
+
+  it("makeRunThreadId is unique per run so runs don't share a thread (P1-5c)", () => {
+    expect(makeRunThreadId(0, 1000)).not.toBe(makeRunThreadId(1, 1000));  // same ms, next run
+    expect(makeRunThreadId(0, 1000)).not.toBe(makeRunThreadId(0, 1001));  // next ms
+    expect(makeRunThreadId(3, 1000)).toBe("run-1000-3");
   });
 });
 

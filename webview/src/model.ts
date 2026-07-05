@@ -244,6 +244,14 @@ export function runSummary(rec: RunRecord): RunRow {
   };
 }
 
+/** A fresh thread id for one ▶ Run (P1-5c). Every run must execute on its own thread so the
+ *  worker's lineage-based reconstruction (branches / state timeline / checkpoints) reflects
+ *  only that run, not the previous ones on a shared thread. `seq`+`now` keep it unique and
+ *  deterministic to test. */
+export function makeRunThreadId(seq: number, now: number): string {
+  return `run-${now}-${seq}`;
+}
+
 /** Toggle a run into/out of the compare selection (P1-5), capped at 2 — selecting a third
  *  drops the oldest so the set is always the two most-recently picked. Pure. */
 export function toggleCompare(set: string[], id: string): string[] {
