@@ -14,7 +14,7 @@ LangGraph Studio.
 > Built for: *"my agent went down the wrong branch / cost too many tokens / hung on a
 > node — how do I see what happened, step by step?"*
 
-![GraphLoupe debugging the showcase graph](https://raw.githubusercontent.com/byGao/GraphLoupe/main/docs/img/overview.png)
+![GraphLoupe debugging the showcase graph](docs/img/overview.png)
 
 📖 **Full documentation → https://bygao.github.io/GraphLoupe/** — getting started, and a
 copy-paste snippet for enabling every feature (checkpointer, manual inference, token
