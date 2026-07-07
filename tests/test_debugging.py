@@ -13,6 +13,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import protocol as P
+from tests._worker_io import readline_timeout
 
 APP_DIR = Path(__file__).resolve().parent.parent
 
@@ -25,7 +26,7 @@ def _worker(entry: str) -> Iterator[subprocess.Popen]:
         env={**os.environ},
     )
     try:
-        proc.stdout.readline()  # startup graph topology
+        readline_timeout(proc)  # startup graph topology
         yield proc
     finally:
         proc.kill()
@@ -39,7 +40,7 @@ def _send(proc: subprocess.Popen, obj: dict) -> None:
 
 def _read_until(proc: subprocess.Popen, type_: str):
     for _ in range(80):
-        line = proc.stdout.readline()
+        line = readline_timeout(proc)
         if not line:
             break
         ev = P.ServerEventAdapter.validate_python(json.loads(line))
@@ -87,8 +88,8 @@ def test_ac03_fork_time_travel_with_override() -> None:
         _read_until(proc, "state_snapshot")
         # fork from there with an override; re-runs b, c on a new runId
         _send(proc, {"cmd": "fork", "checkpointId": ckpt, "stateOverride": {"log": ["X"]}})
+        final = _read_until(proc, "state_snapshot")              # final state (emitted before run_finished)
         _read_until(proc, "run_finished")                        # fork run finished
-        final = _read_until(proc, "state_snapshot")
         assert "X" in final.snapshot.values["log"]               # override is in the forked state
 
 

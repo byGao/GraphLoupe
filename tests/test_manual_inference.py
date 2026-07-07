@@ -18,6 +18,7 @@ from langgraph.types import Command
 
 import protocol as P
 from graphloupe_sidecar.graph import build_manual_graph
+from tests._worker_io import readline_timeout
 
 APP_DIR = Path(__file__).resolve().parent.parent
 
@@ -46,7 +47,7 @@ def _worker(entry: str) -> Iterator[subprocess.Popen]:
         env={**os.environ},
     )
     try:
-        proc.stdout.readline()  # consume the startup graph topology line
+        readline_timeout(proc)  # consume the startup graph topology line
         yield proc
     finally:
         proc.kill()
@@ -60,7 +61,7 @@ def _send(proc: subprocess.Popen, obj: dict) -> None:
 
 def _read_until(proc: subprocess.Popen, type_: str):
     for _ in range(50):
-        line = proc.stdout.readline()
+        line = readline_timeout(proc)
         if not line:
             break
         ev = P.ServerEventAdapter.validate_python(json.loads(line))

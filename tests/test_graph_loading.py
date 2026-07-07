@@ -18,6 +18,7 @@ from starlette.testclient import TestClient
 
 import protocol as P
 from graphloupe_sidecar.server import app
+from tests._worker_io import readline_timeout
 
 APP_DIR = Path(__file__).resolve().parent.parent
 
@@ -37,7 +38,7 @@ def _worker(entry: str, env_extra: dict[str, str] | None = None) -> Iterator[sub
 
 
 def _first(proc: subprocess.Popen):
-    return P.ServerEventAdapter.validate_python(json.loads(proc.stdout.readline()))
+    return P.ServerEventAdapter.validate_python(json.loads(readline_timeout(proc)))
 
 
 def test_ac01_custom_entry_topology() -> None:

@@ -11,6 +11,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import protocol as P
+from tests._worker_io import readline_timeout
 
 APP_DIR = Path(__file__).resolve().parent.parent
 
@@ -53,7 +54,7 @@ def _worker(entry: str, root: Path) -> Iterator[subprocess.Popen]:
 def _topology(src: str, tmp_path: Path) -> P.GraphTopology:
     (tmp_path / "g.py").write_text(src, encoding="utf-8")
     with _worker("g:build_graph", tmp_path) as proc:
-        msg = P.ServerEventAdapter.validate_python(json.loads(proc.stdout.readline()))
+        msg = P.ServerEventAdapter.validate_python(json.loads(readline_timeout(proc)))
     assert isinstance(msg, P.GraphTopology)
     return msg
 

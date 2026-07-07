@@ -15,6 +15,7 @@ from collections.abc import Iterator
 from pathlib import Path
 
 import protocol as P
+from tests._worker_io import readline_timeout
 
 APP_DIR = Path(__file__).resolve().parent.parent
 
@@ -54,7 +55,7 @@ def _worker(entry: str, root: Path) -> Iterator[subprocess.Popen]:
 
 
 def _first(proc: subprocess.Popen):
-    return P.ServerEventAdapter.validate_python(json.loads(proc.stdout.readline()))
+    return P.ServerEventAdapter.validate_python(json.loads(readline_timeout(proc)))
 
 
 def test_ac01_loads_graph_from_project_root(tmp_path: Path) -> None:
