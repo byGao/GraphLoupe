@@ -15,6 +15,7 @@ from pathlib import Path
 
 import protocol as P
 from graphloupe_sidecar import discover
+from tests._worker_io import readline_timeout
 
 APP_DIR = Path(__file__).resolve().parent.parent
 
@@ -119,7 +120,7 @@ def _load_via_adapter(tmp_path: Path, symbol: str) -> P.ServerEvent:
     gl.mkdir()
     (gl / "entry.py").write_text(ADAPTER.format(symbol=symbol), encoding="utf-8")
     with _worker("entry:build_graph", tmp_path) as proc:
-        return P.ServerEventAdapter.validate_python(json.loads(proc.stdout.readline()))
+        return P.ServerEventAdapter.validate_python(json.loads(readline_timeout(proc)))
 
 
 def test_adapter_loads_compiled_graph_variable(tmp_path: Path) -> None:
